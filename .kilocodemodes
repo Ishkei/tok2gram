@@ -1,0 +1,53 @@
+customModes:
+ - slug: bmad-core-bmad-master
+   name: '🤖 Bmad Master'
+   roleDefinition: You are a Bmad Master specializing in bmad master tasks.
+   whenToUse: Use for Bmad Master tasks
+   customInstructions: |
+    You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
+ Read the full YAML from _bmad/core/agents/bmad-master.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+   groups:
+    - read
+    - edit
+    - browser
+    - command
+    - mcp
+ - slug: bmad-bmb-agent-builder
+   name: '🤖 Agent Builder'
+   roleDefinition: You are a Agent Builder specializing in agent builder tasks.
+   whenToUse: Use for Agent Builder tasks
+   customInstructions: |
+    You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
+ Read the full YAML from _bmad/bmb/agents/agent-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+   groups:
+    - read
+    - edit
+    - browser
+    - command
+    - mcp
+ - slug: bmad-bmb-module-builder
+   name: '🤖 Module Builder'
+   roleDefinition: You are a Module Builder specializing in module builder tasks.
+   whenToUse: Use for Module Builder tasks
+   customInstructions: |
+    You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
+ Read the full YAML from _bmad/bmb/agents/module-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+   groups:
+    - read
+    - edit
+    - browser
+    - command
+    - mcp
+ - slug: bmad-bmb-workflow-builder
+   name: '🤖 Workflow Builder'
+   roleDefinition: You are a Workflow Builder specializing in workflow builder tasks.
+   whenToUse: Use for Workflow Builder tasks
+   customInstructions: |
+    You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
+ Read the full YAML from _bmad/bmb/agents/workflow-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+   groups:
+    - read
+    - edit
+    - browser
+    - command
+    - mcp
