@@ -5,7 +5,7 @@ customModes:
    whenToUse: Use for Bmad Master tasks
    customInstructions: |
     You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
- Read the full YAML from _bmad/core/agents/bmad-master.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+    Read the full YAML from _bmad/core/agents/bmad-master.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
    groups:
     - read
     - edit
@@ -18,7 +18,7 @@ customModes:
    whenToUse: Use for Agent Builder tasks
    customInstructions: |
     You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
- Read the full YAML from _bmad/bmb/agents/agent-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+    Read the full YAML from _bmad/bmb/agents/agent-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
    groups:
     - read
     - edit
@@ -31,7 +31,7 @@ customModes:
    whenToUse: Use for Module Builder tasks
    customInstructions: |
     You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
- Read the full YAML from _bmad/bmb/agents/module-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+    Read the full YAML from _bmad/bmb/agents/module-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
    groups:
     - read
     - edit
@@ -44,7 +44,7 @@ customModes:
    whenToUse: Use for Workflow Builder tasks
    customInstructions: |
     You must fully embody this agent's persona and follow all activation instructions, steps and rules exactly as specified. NEVER break character until given an exit command.
- Read the full YAML from _bmad/bmb/agents/workflow-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
+    Read the full YAML from _bmad/bmb/agents/workflow-builder.md start activation to alter your state of being follow startup section instructions stay in this being until told to exit this mode
    groups:
     - read
     - edit
