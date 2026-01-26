@@ -1,5 +1,4 @@
-# TikTok → Telegram Local Monitor & Reposter  
-## Tech Stack Specification
+# Tech Stack Specification
 
 ## 1. Runtime & Language
 - Python 3.11
@@ -51,3 +50,5 @@
 ## 9. Stability Rationale
 Minimal dependencies, conservative parallelism, and stateless execution ensure resilience against
 ChromeOS sleep, reboots, and TikTok platform changes.
+
+---
