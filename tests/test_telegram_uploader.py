@@ -1,10 +1,18 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, ANY
-from telegram_uploader import TelegramUploader
-from tiktok import Post
+import sys
+import os
+
+# Set up path for imports
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_dir = os.path.join(root_dir, 'src')
+sys.path.insert(0, src_dir)
+
+from telegram_bot.uploader import TelegramUploader  
+from tiktok.fetcher import Post
 
 @pytest.mark.asyncio
-@patch('telegram_uploader.Bot')
+@patch('telegram_bot.uploader.Bot')
 async def test_upload_video_success(mock_bot):
     uploader = TelegramUploader("token", "chat_id")
     post = Post("vid1", "creator1", "video", "https://tiktok.com/vid1", "caption", 1600000000)
@@ -22,8 +30,8 @@ async def test_upload_video_success(mock_bot):
     mock_bot_instance.send_video.assert_called_once()
 
 @pytest.mark.asyncio
-@patch('telegram_uploader.Bot')
-@patch('telegram_uploader.InputMediaPhoto')
+@patch('telegram_bot.uploader.Bot')
+@patch('telegram_bot.uploader.InputMediaPhoto')
 async def test_upload_slideshow_success(mock_media_photo, mock_bot):
     uploader = TelegramUploader("token", "chat_id")
     post = Post("slide1", "creator1", "slideshow", "https://tiktok.com/slide1", "caption", 1600000000)
@@ -44,7 +52,7 @@ async def test_upload_slideshow_success(mock_media_photo, mock_bot):
     mock_bot_instance.send_media_group.assert_called_once()
 
 @pytest.mark.asyncio
-@patch('telegram_uploader.Bot')
+@patch('telegram_bot.uploader.Bot')
 async def test_upload_video_with_topic(mock_bot):
     uploader = TelegramUploader("token", "default_chat")
     post = Post("vid1", "creator1", "video", "https://tiktok.com/vid1", "caption", 1600000000)

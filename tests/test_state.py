@@ -1,7 +1,9 @@
 import pytest
 import sqlite3
 import os
-from state import StateStore
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.core.state import StateStore
 
 @pytest.fixture
 def store(tmp_path):

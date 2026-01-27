@@ -1,7 +1,9 @@
 import pytest
 import yaml
 import os
-from config_loader import load_config, load_creators
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.core.config_loader import load_config, load_creators
 
 def test_load_config_valid(tmp_path):
     config_file = tmp_path / "config.yaml"

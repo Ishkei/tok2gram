@@ -1,6 +1,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from tiktok import fetch_posts, Post, sort_posts_chronologically
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.tiktok.fetcher import fetch_posts, Post, sort_posts_chronologically
 
 def test_post_model():
     post = Post(
@@ -14,7 +17,7 @@ def test_post_model():
     assert post.post_id == "123"
     assert post.kind == "video"
 
-@patch('tiktok.yt_dlp.YoutubeDL')
+@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
 def test_fetch_posts_success(mock_ytdl):
     # Mock yt-dlp response
     mock_instance = mock_ytdl.return_value.__enter__.return_value
@@ -36,7 +39,7 @@ def test_fetch_posts_success(mock_ytdl):
     assert posts[0].post_id == 'post1'
     assert posts[0].creator == 'creator1'
 
-@patch('tiktok.yt_dlp.YoutubeDL')
+@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
 def test_fetch_posts_slideshow_detection(mock_ytdl):
     # Mock yt-dlp response for slideshow
     mock_instance = mock_ytdl.return_value.__enter__.return_value
@@ -64,7 +67,7 @@ def test_fetch_posts_slideshow_detection(mock_ytdl):
     assert posts[0].kind == 'slideshow'
     assert posts[1].kind == 'slideshow'
 
-@patch('tiktok.yt_dlp.YoutubeDL')
+@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
 def test_fetch_posts_mixed_media_prioritization(mock_ytdl):
     # Mock mixed media (video metadata + playlist type)
     mock_instance = mock_ytdl.return_value.__enter__.return_value

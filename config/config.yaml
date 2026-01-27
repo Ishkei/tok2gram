@@ -1,0 +1,10 @@
+telegram:
+  bot_token: "8513563042:AAGtDANcIevOFl8S-zWC7EYdeYQh6EZht_s"
+
+settings:
+  fetch_depth: 10
+  download_workers: 3
+  yt_concurrent_fragments: 2
+  retry_uploads: 1
+  delay_between_creators_seconds_min: 10
+  delay_between_creators_seconds_max: 30
