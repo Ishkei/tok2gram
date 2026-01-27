@@ -3,7 +3,7 @@ import asyncio
 from typing import List, Optional
 from telegram import Bot, InputMediaPhoto, InputMediaVideo
 from telegram.constants import ParseMode
-from tiktok import Post
+from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("tok2gram.telegram")

@@ -3,12 +3,12 @@ import sys
 import asyncio
 import time
 import random
-from config_loader import load_config, load_creators
-from tiktok import fetch_posts, sort_posts_chronologically
-from downloader import download_post
-from state import StateStore
-from telegram_uploader import TelegramUploader
-from cookie_manager import CookieManager
+from src.config_loader import load_config, load_creators
+from src.tiktok_api import fetch_posts, sort_posts_chronologically
+from src.downloader import download_post
+from src.state import StateStore
+from src.telegram_uploader import TelegramUploader
+from src.cookie_manager import CookieManager
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +23,7 @@ logger = logging.getLogger("tok2gram")
 
 async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
     username = creator_config['username']
-    chat_id = creator_config.get('telegram_chat_id') or settings.get('telegram_chat_id')
+    chat_id = creator_config.get('chat_id') or settings.get('telegram_chat_id')
     fetch_depth = settings.get('fetch_depth', 10)
 
     if not chat_id:
@@ -62,9 +62,9 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         try:
             message_id = None
             if post.kind == 'video':
-                message_id = await uploader.upload_video(post, file_paths[0])
+                message_id = await uploader.upload_video(post, file_paths[0], chat_id=chat_id)
             elif post.kind == 'slideshow':
-                message_id = await uploader.upload_slideshow(post, file_paths)
+                message_id = await uploader.upload_slideshow(post, file_paths, chat_id=chat_id)
             
             if message_id:
                 state.mark_as_uploaded(post.post_id, chat_id, message_id)
@@ -89,7 +89,7 @@ async def main():
         
         logger.info(f"Loaded config and {len(creators)} creators.")
         
-        state = StateStore("state.db")
+        state = StateStore("data/state.db")
         uploader = TelegramUploader(
             token=config['telegram']['bot_token'],
             chat_id=settings.get('telegram_chat_id')

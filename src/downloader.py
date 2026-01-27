@@ -2,7 +2,7 @@ import yt_dlp
 import logging
 import os
 import requests
-from tiktok import Post
+from .tiktok_api import Post
 from typing import Optional, List
 
 logger = logging.getLogger("tok2gram.downloader")
