@@ -6,16 +6,16 @@
 # story_location: docs/stories/
 
 development_status:
-  epic-1: backlog
-  epic-2: backlog
+  epic-1: done
+  epic-2: in-progress
   epic-3: backlog
   epic-4: backlog
   epic-5: backlog
-  1-1-load-configuration-and-creators: ready-for-dev
-  1-2-fetch-latest-posts-from-tiktok: ready-for-dev
-  1-3-sort-posts-chronologically: ready-for-dev
-  2-1-check-for-processed-posts: ready-for-dev
-  2-2-download-video-content: ready-for-dev
+  1-1-load-configuration-and-creators: done
+  1-2-fetch-latest-posts-from-tiktok: done
+  1-3-sort-posts-chronologically: done
+  2-1-check-for-processed-posts: done
+  2-2-download-video-content: done
   2-3-download-slideshow-content: ready-for-dev
   2-4-handle-download-edge-cases: ready-for-dev
   3-1-upload-video-content: ready-for-dev

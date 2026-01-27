@@ -1,6 +1,6 @@
 # Story 1.1: Load Configuration and Creators
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,13 +17,13 @@ so that the system knows which creators to monitor and operational parameters.
 
 ## Tasks / Subtasks
 
-- [ ] Load config.yaml file (AC: 1,3)
-  - [ ] Parse YAML structure
-  - [ ] Validate required parameters
-- [ ] Load creators.yaml file (AC: 1,4)
-  - [ ] Parse YAML structure
-  - [ ] Validate creator entries
-- [ ] Make configurations available to application (AC: 2,3,4)
+- [x] Load config.yaml file (AC: 1,3)
+  - [x] Parse YAML structure
+  - [x] Validate required parameters
+- [x] Load creators.yaml file (AC: 1,4)
+  - [x] Parse YAML structure
+  - [x] Validate creator entries
+- [x] Make configurations available to application (AC: 2,3,4)
 
 ## Dev Notes
 
@@ -48,10 +48,22 @@ so that the system knows which creators to monitor and operational parameters.
 
 ### Agent Model Used
 
-Grok Code Fast 1
+Amelia (Dev Agent) - Zencoder
 
 ### Debug Log References
 
+- PYTHONPATH issues resolved by exporting current dir.
+- config_loader.py created to separate logic.
+
 ### Completion Notes List
 
+- Implemented `config_loader.py` with `load_config` and `load_creators`.
+- Integrated loading into `main.py`.
+- Verified with unit tests in `tests/test_config.py`.
+- Smoke test on real files passed.
+
 ### File List
+
+- config_loader.py
+- main.py
+- tests/test_config.py

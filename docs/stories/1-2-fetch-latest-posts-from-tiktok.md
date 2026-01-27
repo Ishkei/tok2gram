@@ -1,6 +1,6 @@
 # Story 1.2: Fetch Latest Posts from TikTok
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,13 +17,13 @@ so that new content can be identified.
 
 ## Tasks / Subtasks
 
-- [ ] Implement yt-dlp metadata extraction for TikTok profile (AC: 1,2,3)
-  - [ ] Configure yt-dlp to fetch JSON metadata only
-  - [ ] Limit to latest 10 posts
-- [ ] Parse metadata and extract post information (AC: 3,4)
-  - [ ] Extract post_id, creator, kind, url, caption, created_at
-  - [ ] Handle missing timestamps gracefully
-- [ ] Create Post model instances (AC: 4)
+- [x] Implement yt-dlp metadata extraction for TikTok profile (AC: 1,2,3)
+  - [x] Configure yt-dlp to fetch JSON metadata only
+  - [x] Limit to latest 10 posts
+- [x] Parse metadata and extract post information (AC: 3,4)
+  - [x] Extract post_id, creator, kind, url, caption, created_at
+  - [x] Handle missing timestamps gracefully
+- [x] Create Post model instances (AC: 4)
 
 ## Dev Notes
 
@@ -47,10 +47,22 @@ so that new content can be identified.
 
 ### Agent Model Used
 
-Grok Code Fast 1
+Amelia (Dev Agent) - Zencoder
 
 ### Debug Log References
 
+- yt-dlp Netscape cookie requirement bypassed by using `http_headers` with raw cookie value.
+- Flat extraction used for performance.
+
 ### Completion Notes List
 
+- Implemented `Post` dataclass in `tiktok.py`.
+- Implemented `fetch_posts` using `yt-dlp`.
+- Verified with unit tests and a live smoke test against `khaby.lame`.
+- Successfully handled raw `sid_tt` cookie via custom headers.
+
 ### File List
+
+- tiktok.py
+- tests/test_tiktok.py
+- smoke_tiktok.py

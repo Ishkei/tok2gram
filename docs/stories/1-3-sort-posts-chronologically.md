@@ -1,6 +1,6 @@
 # Story 1.3: Sort Posts Chronologically
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,17 +17,17 @@ so that content is processed in the correct order.
 
 ## Tasks / Subtasks
 
-- [ ] Implement sorting logic for Post list (AC: 1,2,3)
-  - [ ] Sort by created_at ascending
-  - [ ] Use stable sort to preserve relative order
-- [ ] Handle posts with None created_at (AC: 4)
-  - [ ] Place None timestamps at the end (newest)
-  - [ ] Log warning for missing timestamps
+- [x] Implement sorting logic for Post list (AC: 1,2,3)
+  - [x] Sort by created_at ascending
+  - [x] Use stable sort to preserve relative order
+- [x] Handle posts with None created_at (AC: 4)
+  - [x] Place None timestamps at the end (newest)
+  - [x] Log warning for missing timestamps
 
 ## Dev Notes
 
 - Sorting happens after fetching posts in main workflow
-- Use Python's sorted() with key=lambda p: p.created_at or datetime.max
+- Use Python's sorted() with key=lambda p: p.created_at or float('inf')
 - Ensures chronological processing for consistent behavior
 
 ### Project Structure Notes
@@ -44,10 +44,18 @@ so that content is processed in the correct order.
 
 ### Agent Model Used
 
-Grok Code Fast 1
+Amelia (Dev Agent) - Zencoder
 
 ### Debug Log References
 
+- Sorting logic handles `None` by assigning `float('inf')` during sort key evaluation.
+
 ### Completion Notes List
 
+- Implemented `sort_posts_chronologically` in `tiktok.py`.
+- Verified with unit tests covering valid timestamps and `None` handling.
+
 ### File List
+
+- tiktok.py
+- tests/test_tiktok.py

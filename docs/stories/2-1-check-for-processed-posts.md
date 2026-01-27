@@ -1,6 +1,6 @@
 # Story 2.1: Check for Processed Posts
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,11 +17,11 @@ so that duplicates are avoided across runs.
 
 ## Tasks / Subtasks
 
-- [ ] Implement is_processed(post_id) function (AC: 1,2,3,4)
-  - [ ] Connect to SQLite state.db
-  - [ ] Query posts table for post_id
-  - [ ] Check if uploaded_at is not null
-- [ ] Handle database connection errors gracefully (AC: 1)
+- [x] Implement is_processed(post_id) function (AC: 1,2,3,4)
+  - [x] Connect to SQLite state.db
+  - [x] Query posts table for post_id
+  - [x] Check if uploaded_at is not null
+- [x] Handle database connection errors gracefully (AC: 1)
 
 ## Dev Notes
 
@@ -44,10 +44,20 @@ so that duplicates are avoided across runs.
 
 ### Agent Model Used
 
-Grok Code Fast 1
+Amelia (Dev Agent) - Zencoder
 
 ### Debug Log References
 
+- SQLite schema implemented as per architecture.
+- is_processed logic verified with unit tests.
+
 ### Completion Notes List
 
+- Created `state.py` with `StateStore` class.
+- Implemented automatic schema initialization.
+- Implemented `is_processed` with correct null handling for `uploaded_at`.
+
 ### File List
+
+- state.py
+- tests/test_state.py
