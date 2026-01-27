@@ -2,7 +2,7 @@ import logging
 import asyncio
 import subprocess
 from typing import List, Optional
-from telegram import Bot, InputMediaPhoto, InputMediaVideo
+from telegram import Bot, InputMediaPhoto
 from telegram.constants import ParseMode
 from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -98,6 +98,31 @@ class TelegramUploader:
                 return message.message_id
         except Exception as e:
             logger.error(f"Failed to upload video {post.post_id}: {e}")
+            raise
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def upload_audio(self, post: Post, audio_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
+        """Upload a single audio file to Telegram."""
+        target_chat = chat_id or self.chat_id
+        caption = self._format_caption(post)
+        logger.info(f"Uploading audio for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
+
+        try:
+            with open(audio_path, 'rb') as audio:
+                message = await self.bot.send_audio(
+                    chat_id=target_chat,
+                    audio=audio,
+                    caption=caption,
+                    message_thread_id=message_thread_id,
+                    read_timeout=60,
+                    write_timeout=60,
+                    connect_timeout=60,
+                    pool_timeout=60,
+                )
+                logger.info(f"Successfully uploaded audio: {message.message_id}")
+                return message.message_id
+        except Exception as e:
+            logger.error(f"Failed to upload audio {post.post_id}: {e}")
             raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))

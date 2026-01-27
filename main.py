@@ -10,6 +10,10 @@ from src.state import StateStore
 from src.telegram_uploader import TelegramUploader
 from src.cookie_manager import CookieManager
 
+# Bot metadata (hardcoded for startup banner)
+BOT_NAME = "Tok2Gram"
+BOT_VERSION = "1.0.0"
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -51,8 +55,8 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.info(f"New post found: {post.post_id} ({post.kind})")
         
         # Download
-        file_paths = download_post(post, "downloads", cookie_content=cookie_content)
-        if not file_paths:
+        media = download_post(post, "downloads", cookie_content=cookie_content)
+        if not media:
             logger.error(f"Failed to download post {post.post_id}")
             continue
             
@@ -62,9 +66,16 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         try:
             message_id = None
             if post.kind == 'video':
-                message_id = await uploader.upload_video(post, file_paths[0], chat_id=chat_id)
+                message_id = await uploader.upload_video(post, media["video"], chat_id=chat_id)
             elif post.kind == 'slideshow':
-                message_id = await uploader.upload_slideshow(post, file_paths, chat_id=chat_id)
+                image_paths = media.get("images") or []
+                audio_path = media.get("audio")
+                if image_paths:
+                    message_id = await uploader.upload_slideshow(post, image_paths, chat_id=chat_id)
+                if audio_path:
+                    # Telegram doesn't allow mixing audio + album in a single message.
+                    # Upload audio after the album.
+                    await uploader.upload_audio(post, audio_path, chat_id=chat_id)
             
             if message_id:
                 state.mark_as_uploaded(post.post_id, chat_id, message_id)
@@ -80,6 +91,8 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     logger.info(f"Finished processing {username}. {new_posts_count} new posts uploaded.")
 
 async def main():
+    # Startup banner (print only when running as a program, not on import)
+    print(f"{BOT_NAME} v{BOT_VERSION}")
     logger.info("Starting Tok2gram...")
     
     try:

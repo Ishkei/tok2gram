@@ -1,6 +1,8 @@
 import yt_dlp
 import logging
 import os
+import re
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,9 +10,103 @@ from pathlib import Path
 import requests
 
 from .tiktok_api import Post
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger("tok2gram.downloader")
+
+
+def _extract_json_script(html_text: str, script_id: str) -> Optional[dict]:
+    """Extract embedded JSON from a <script id="..."> tag."""
+    try:
+        m = re.search(
+            rf'<script[^>]+id="{re.escape(script_id)}"[^>]*>(?P<json>.*?)</script>',
+            html_text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if not m:
+            return None
+        payload = (m.group('json') or '').strip()
+        if not payload:
+            return None
+        return json.loads(payload)
+    except Exception:
+        return None
+
+
+def _pick_first_http_url(value: Any) -> Optional[str]:
+    """Best-effort helper to pick an http(s) URL from nested structures."""
+    if isinstance(value, str):
+        return value if value.startswith('http') else None
+    if isinstance(value, list):
+        for v in value:
+            u = _pick_first_http_url(v)
+            if u:
+                return u
+        return None
+    if isinstance(value, dict):
+        # Common TikTok url list containers
+        for k in ("url", "urlList", "url_list", "UrlList", "playUrl", "play_url", "downloadAddr", "playAddr"):
+            if k in value:
+                u = _pick_first_http_url(value.get(k))
+                if u:
+                    return u
+        for v in value.values():
+            u = _pick_first_http_url(v)
+            if u:
+                return u
+        return None
+    return None
+
+
+def _extract_slideshow_urls_from_html(post: Post, session: requests.Session, url: str) -> Dict[str, Any]:
+    """Fallback extractor for TikTok photo posts by parsing webpage embedded JSON."""
+    resp = session.get(url, timeout=15)
+    resp.raise_for_status()
+    html_text = resp.text or ""
+
+    sigi = _extract_json_script(html_text, "SIGI_STATE")
+    universal = _extract_json_script(html_text, "__UNIVERSAL_DATA_FOR_REHYDRATION__")
+
+    item: Optional[dict] = None
+    if isinstance(sigi, dict) and isinstance(sigi.get("ItemModule"), dict):
+        item_module = sigi["ItemModule"]
+        item = item_module.get(post.post_id) or next(iter(item_module.values()), None)
+    
+    # Some TikTok pages use the universal rehydration JSON
+    if item is None and isinstance(universal, dict):
+        # Best-effort: locate an itemStruct-like dict anywhere within
+        stack = [universal]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                if isinstance(cur.get("itemStruct"), dict):
+                    item = cur.get("itemStruct")
+                    break
+                for v in cur.values():
+                    stack.append(v)
+            elif isinstance(cur, list):
+                stack.extend(cur)
+
+    image_urls: List[str] = []
+    audio_url: Optional[str] = None
+    if isinstance(item, dict):
+        image_post = item.get("imagePost") or item.get("image_post") or {}
+        images = image_post.get("images") or item.get("images") or []
+        if isinstance(images, list):
+            for img in images:
+                u = None
+                if isinstance(img, dict):
+                    # Prefer imageURL/urlList structure when present
+                    u = _pick_first_http_url(img.get("imageURL") or img.get("imageUrl") or img.get("urlList") or img)
+                else:
+                    u = _pick_first_http_url(img)
+                if u and u not in image_urls:
+                    image_urls.append(u)
+
+        music = item.get("music") or {}
+        audio_url = _pick_first_http_url(music.get("playUrl") or music.get("play_url") or music)
+
+    return {"image_urls": image_urls, "audio_url": audio_url}
 
 
 def _transcode_to_telegram_mp4(input_path: str) -> str:
@@ -99,14 +195,14 @@ def _transcode_to_telegram_mp4(input_path: str) -> str:
         except Exception:
             pass
 
-def download_post(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[List[str]]:
+def download_post(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Dispatch download based on post kind.
-    Returns a list of file paths.
+    Returns a dict with downloaded media paths.
     """
     if post.kind == 'video':
         path = download_video(post, base_download_path, cookie_path, cookie_content)
-        return [path] if path else None
+        return {"video": path} if path else None
     elif post.kind == 'slideshow':
         return download_slideshow(post, base_download_path, cookie_path, cookie_content)
     else:
@@ -174,7 +270,7 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
         logger.error(f"Failed to download video {post.post_id}: {e}")
         return None
 
-def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[List[str]]:
+def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Download a TikTok slideshow (multiple images).
     """
@@ -198,54 +294,96 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
         ydl_opts['http_headers']['Cookie'] = actual_cookie
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(post.url, download=False)
-            
-            image_urls = []
+        info = None
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # NOTE: TikTok photo URLs (`/photo/<id>`) may be unsupported by yt-dlp.
+                info = ydl.extract_info(post.url, download=False)
+        except Exception as e:
+            logger.warning(
+                "yt-dlp metadata extraction failed for slideshow %s; falling back to HTML parsing. Error: %s",
+                post.post_id,
+                e,
+            )
+
+        image_urls: List[str] = []
+        audio_url: Optional[str] = None
+
+        # Primary extractor: yt-dlp info dict (when available)
+        if isinstance(info, dict):
             # TikTok slideshows images are often in 'entries' or 'formats'
-            if 'entries' in info:
+            if isinstance(info.get('entries'), list):
                 for entry in info['entries']:
-                    if entry.get('url'):
+                    if isinstance(entry, dict) and entry.get('url'):
                         image_urls.append(entry['url'])
-            elif 'formats' in info:
-                # Some versions might put images in formats
+            elif isinstance(info.get('formats'), list):
                 for f in info['formats']:
-                    # Look for formats that might be images
-                    if f.get('url') and (f.get('vcodec') == 'none' or 'image' in f.get('format_note', '').lower()):
+                    if not isinstance(f, dict):
+                        continue
+                    note = (f.get('format_note') or '').lower()
+                    if f.get('url') and (f.get('vcodec') == 'none' or 'image' in note or (f.get('ext') or '').lower() in ("jpg", "jpeg", "png", "webp")):
                         image_urls.append(f['url'])
-            
-            if not image_urls:
-                logger.error(f"No images found in slideshow {post.post_id}")
-                return None
 
-            downloaded_files = []
-            session = requests.Session()
-            session.headers.update(ydl_opts['http_headers'])
+        session = requests.Session()
+        session.headers.update(ydl_opts['http_headers'])
 
-            for i, url in enumerate(image_urls):
-                # TikTok URLs often have many params, let's keep it simple
-                ext = "jpg" 
-                
+        # Fallback extractor: parse webpage HTML JSON for `/photo/` posts
+        if not image_urls:
+            logger.info(
+                "No slideshow images found via yt-dlp for %s; attempting webpage JSON extraction",
+                post.post_id,
+            )
+            extracted = _extract_slideshow_urls_from_html(post, session, post.url)
+            image_urls = extracted.get('image_urls') or []
+            audio_url = extracted.get('audio_url')
+
+        if not image_urls:
+            logger.error(f"No images found in slideshow {post.post_id}")
+            return None
+
+        downloaded_files: List[str] = []
+        for i, url in enumerate(image_urls):
+            ext = "jpg"
+            filename = os.path.join(creator_path, f"{i+1}.{ext}")
+            resp = session.get(url, timeout=15)
+            resp.raise_for_status()
+
+            content_type = (resp.headers.get('Content-Type', '') or '').lower()
+            if 'image/png' in content_type:
+                ext = "png"
+            elif 'image/webp' in content_type:
+                ext = "webp"
+            elif 'image/jpeg' in content_type or 'image/jpg' in content_type:
+                ext = "jpg"
+
+            if ext != "jpg":
                 filename = os.path.join(creator_path, f"{i+1}.{ext}")
-                
-                resp = session.get(url, timeout=10)
-                resp.raise_for_status()
-                
-                # Check actual content type if possible
-                content_type = resp.headers.get('Content-Type', '')
-                if 'image/png' in content_type: ext = "png"
-                elif 'image/webp' in content_type: ext = "webp"
-                
-                if ext != "jpg":
-                    filename = os.path.join(creator_path, f"{i+1}.{ext}")
 
-                with open(filename, 'wb') as f:
-                    f.write(resp.content)
-                
-                downloaded_files.append(filename)
-                logger.info(f"Downloaded slideshow image {i+1}/{len(image_urls)}: {filename}")
+            with open(filename, 'wb') as f:
+                f.write(resp.content)
 
-            return downloaded_files
+            downloaded_files.append(filename)
+            logger.info(f"Downloaded slideshow image {i+1}/{len(image_urls)}: {filename}")
+
+        audio_path: Optional[str] = None
+        if audio_url:
+            try:
+                logger.info("Downloading slideshow audio for %s", post.post_id)
+                aresp = session.get(audio_url, timeout=20)
+                aresp.raise_for_status()
+                act = (aresp.headers.get('Content-Type', '') or '').lower()
+                aext = "m4a"
+                if 'audio/mpeg' in act:
+                    aext = "mp3"
+                elif 'audio/mp4' in act or 'audio/x-m4a' in act:
+                    aext = "m4a"
+                audio_path = os.path.join(creator_path, f"audio.{aext}")
+                with open(audio_path, 'wb') as f:
+                    f.write(aresp.content)
+            except Exception as e:
+                logger.warning("Failed to download slideshow audio for %s: %s", post.post_id, e)
+
+        return {"images": downloaded_files, "audio": audio_path}
 
     except Exception as e:
         logger.error(f"Failed to download slideshow {post.post_id}: {e}")

@@ -57,10 +57,14 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                     
                 caption = entry.get('description') or entry.get('title') or ""
                 
-                # Prioritize video over slideshow for mixed media
-                # yt-dlp flat-extract often marks slideshows as 'playlist' in _type or type
-                kind = 'video'
-                if entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow':
+                entry_url = entry.get('url') or entry.get('webpage_url') or ""
+
+                # Photo posts on TikTok use `/photo/<id>` URLs. These must be treated as
+                # slideshows (image carousels), not videos.
+                kind = 'slideshow' if '/photo/' in entry_url else 'video'
+
+                # yt-dlp flat-extract sometimes marks slideshows as 'playlist' in _type or type
+                if kind != 'slideshow' and (entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow'):
                     # Only mark as slideshow if it's NOT explicitly marked as a video elsewhere
                     if entry.get('_type') != 'video':
                         kind = 'slideshow'
@@ -69,7 +73,7 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                     post_id=entry.get('id'),
                     creator=username,
                     kind=kind,
-                    url=entry.get('url') or entry.get('webpage_url'),
+                    url=entry_url,
                     caption=caption,
                     created_at=entry.get('timestamp')
                 )
