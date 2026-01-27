@@ -263,3 +263,60 @@ So that content reaches the intended audience.
 **Then** send to the specified chat_id  
 **And** include message_thread_id if topic is configured  
 **And** store telegram_chat_id and telegram_message_id in state
+## Epic 4: State Persistence
+Users can maintain processing state across restarts, ensuring no duplicates and reliable recovery from reboots.
+
+### Story 4.1: Store Processed Post IDs in SQLite State DB
+As a state manager,
+I want to store processed post IDs in SQLite state.db,
+So that duplicates are avoided across restarts.
+
+**Acceptance Criteria:**
+
+**Given** a post has been processed
+**When** storing state
+**Then** create/update SQLite posts table with post details
+**And** include post_id, creator, kind, source_url, created_at, downloaded_at, uploaded_at, telegram_chat_id, telegram_message_id
+**And** ensure reliable recovery from reboots
+
+## Epic 5: Anti-Bot Protection
+Users can access TikTok content reliably using cookies, rotation, and conservative polling to avoid blocks.
+
+### Story 5.1: Use TikTok Cookies for Anti-Block
+As an anti-block system,
+I want to use TikTok cookies for requests,
+So that access is not blocked by TikTok.
+
+**Acceptance Criteria:**
+
+**Given** TikTok cookies are available
+**When** making requests to TikTok
+**Then** include cookies in requests
+**And** store cookies securely in cookies/ directory
+**And** set permissions to 600
+
+### Story 5.2: Rotate Cookies on Failure
+As an anti-block system,
+I want to rotate cookies on failure,
+So that blocked cookies don't prevent access.
+
+**Acceptance Criteria:**
+
+**Given** a fetch request fails due to blocking
+**When** handling the failure
+**Then** switch to the next available cookie
+**And** retry the request with the new cookie
+**And** log the rotation for monitoring
+
+### Story 5.3: Implement Conservative Polling and Random Delays
+As an anti-block system,
+I want to implement conservative polling and random delays,
+So that requests appear human-like and avoid detection.
+
+**Acceptance Criteria:**
+
+**Given** polling configuration
+**When** fetching posts from creators
+**Then** add random delays between requests
+**And** limit polling frequency
+**And** configure delay ranges in config.yaml

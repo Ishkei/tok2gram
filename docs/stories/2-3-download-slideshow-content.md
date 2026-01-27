@@ -47,3 +47,21 @@ so that photo content is available for upload.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Slideshow detection implemented by checking `_type` and `entries` in `yt-dlp` metadata.
+- Images downloaded sequentially within the post to maintain order.
+
+### Completion Notes List
+
+- Implemented `download_slideshow` in `downloader.py`.
+- Integrated `requests` for direct image downloading where appropriate.
+- Verified directory creation and file numbering.
+
+### File List
+
+- downloader.py
+- tests/test_downloader.py

@@ -1,6 +1,6 @@
 # Story 3.3: Implement Upload Retry Logic
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ so that transient failures don't cause content loss.
 
 ## Tasks / Subtasks
 
-- [ ] Implement retry logic for uploads (AC: 1,2,3,4,5)
-  - [ ] Catch upload failures
-  - [ ] Retry upload once on failure
-  - [ ] Only update state on success
-  - [ ] Log failure details
+- [x] Implement retry logic for uploads (AC: 1,2,3,4,5)
+  - [x] Catch upload failures
+  - [x] Retry upload once on failure
+  - [x] Only update state on success
+  - [x] Log failure details
 
 ## Dev Notes
 
@@ -46,3 +46,19 @@ so that transient failures don't cause content loss.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Used `tenacity` for declarative retry logic in `telegram_uploader.py`.
+- Configured exponential backoff to handle rate limits gracefully.
+
+### Completion Notes List
+
+- Applied `@retry` decorator to `upload_video` and `upload_slideshow`.
+- Verified that `main.py` only updates state if uploader returns a `message_id`.
+
+### File List
+
+- telegram_uploader.py

@@ -1,6 +1,6 @@
 # Story 3.2: Upload Slideshow as Media Group
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,12 +18,12 @@ so that images appear as albums.
 
 ## Tasks / Subtasks
 
-- [ ] Implement slideshow upload as media group (AC: 1,2,3,4,5)
-  - [ ] Use Telegram Bot API sendMediaGroup
-  - [ ] Include all images in the group
-  - [ ] Set caption only on first item
-  - [ ] Preserve order of images
-  - [ ] Store message_id for the group
+- [x] Implement slideshow upload as media group (AC: 1,2,3,4,5)
+  - [x] Use Telegram Bot API sendMediaGroup
+  - [x] Include all images in the group
+  - [x] Set caption only on first item
+  - [x] Preserve order of images
+  - [x] Store message_id for the group
 
 ## Dev Notes
 
@@ -47,3 +47,21 @@ so that images appear as albums.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Handled closing of file handles in `upload_slideshow` to prevent resource leaks.
+- Verified caption is only applied to the first `InputMediaPhoto`.
+
+### Completion Notes List
+
+- Implemented `upload_slideshow` in `telegram_uploader.py`.
+- Used `InputMediaPhoto` for media group members.
+- Integrated into `main.py` post-processing loop.
+
+### File List
+
+- telegram_uploader.py
+- tests/test_telegram_uploader.py

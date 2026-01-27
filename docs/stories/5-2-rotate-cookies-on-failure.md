@@ -46,3 +46,22 @@ so that blocked cookies don't prevent access.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Rotation logic implemented as a simple round-robin in `CookieManager`.
+- `main.py` detects empty fetch results and triggers rotation.
+
+### Completion Notes List
+
+- Implemented `rotate()` method in `CookieManager`.
+- Added retry logic with rotation in `main.py`'s `process_creator`.
+- Verified rotation with unit tests mocking multiple cookie files.
+
+### File List
+
+- cookie_manager.py
+- main.py
+- tests/test_cookies.py

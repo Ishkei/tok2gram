@@ -52,3 +52,23 @@ so that all content types are processed appropriately.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Primary key uniqueness in SQLite handles pinned posts (won't re-process if ID exists).
+- Mixed media detected and handled by prioritizing `video` kind in `tiktok.py`.
+
+### Completion Notes List
+
+- Implemented `kind` detection logic in `tiktok.py`.
+- Verified that `is_processed` correctly blocks already-seen pinned posts.
+- Smoke tests confirmed video priority for mixed content.
+
+### File List
+
+- tiktok.py
+- state.py
+- downloader.py
+- tests/test_tiktok.py

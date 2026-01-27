@@ -1,6 +1,6 @@
 # Story 3.4: Route Uploads to Specified Destinations
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ so that content reaches the intended audience.
 
 ## Tasks / Subtasks
 
-- [ ] Implement routing logic (AC: 1,2,3,4,5)
-  - [ ] Read chat_id from creator config
-  - [ ] Include message_thread_id for topics
-  - [ ] Send to correct destination
-  - [ ] Store chat_id and message_id in SQLite state
+- [x] Implement routing logic (AC: 1,2,3,4,5)
+  - [x] Read chat_id from creator config
+  - [x] Include message_thread_id for topics
+  - [x] Send to correct destination
+  - [x] Store chat_id and message_id in SQLite state
 
 ## Dev Notes
 
@@ -45,3 +45,22 @@ so that content reaches the intended audience.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Added `message_thread_id` support to both `upload_video` and `upload_slideshow`.
+- Updated `StateStore.mark_as_uploaded` to persist chat and message IDs.
+
+### Completion Notes List
+
+- Integrated routing logic in `main.py` by passing `telegram_chat_id` and `message_thread_id` to uploader methods.
+- Verified state persistence of Telegram identifiers in `state.py`.
+
+### File List
+
+- main.py
+- telegram_uploader.py
+- state.py
+- tests/test_telegram_uploader.py

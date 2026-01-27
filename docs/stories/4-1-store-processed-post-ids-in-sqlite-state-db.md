@@ -1,6 +1,6 @@
 # Story 4.1: Store Processed Post IDs in SQLite State DB
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,13 +18,13 @@ so that duplicates are avoided across restarts.
 
 ## Tasks / Subtasks
 
-- [ ] Create SQLite schema for state.db (AC: 3,4)
-  - [ ] Define posts table with required columns
-  - [ ] Set up database connection
-- [ ] Implement state storage logic (AC: 1,2,3,4,5)
-  - [ ] Insert/update post records
-  - [ ] Mark downloaded_at and uploaded_at appropriately
-  - [ ] Store Telegram IDs after upload
+- [x] Create SQLite schema for state.db (AC: 3,4)
+  - [x] Define posts table with required columns
+  - [x] Set up database connection
+- [x] Implement state storage logic (AC: 1,2,3,4,5)
+  - [x] Insert/update post records
+  - [x] Mark downloaded_at and uploaded_at appropriately
+  - [x] Store Telegram IDs after upload
 
 ## Dev Notes
 
@@ -48,3 +48,21 @@ so that duplicates are avoided across restarts.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Verified primary key constraint on `post_id` prevents duplicates.
+- Added `record_download` and `mark_as_uploaded` methods for granular state tracking.
+
+### Completion Notes List
+
+- Implemented `StateStore` in `state.py` using `sqlite3`.
+- Ensured thread-safe access (though currently sequential).
+- Verified data types for timestamps and IDs.
+
+### File List
+
+- state.py
+- tests/test_state.py

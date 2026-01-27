@@ -47,3 +47,22 @@ so that requests appear human-like and avoid detection.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Added randomized `asyncio.sleep` between creator fetches.
+- Added randomized `asyncio.sleep` between Telegram uploads to avoid flood limits.
+
+### Completion Notes List
+
+- Implemented jittered delays in `main.py` using `random.uniform`.
+- Configuration-based delay ranges loaded from `config.yaml`.
+- Verified delay logic with integration tests.
+
+### File List
+
+- main.py
+- config_loader.py
+- config.yaml

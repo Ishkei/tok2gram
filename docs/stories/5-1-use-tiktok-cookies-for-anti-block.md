@@ -47,3 +47,23 @@ so that access is not blocked by TikTok.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Cookie files permissions set to 600 via `os.chmod` in `CookieManager`.
+- Cookies passed to `yt-dlp` via custom `http_headers` for flexibility.
+
+### Completion Notes List
+
+- Implemented `CookieManager` in `cookie_manager.py`.
+- Integrated cookie loading into `main.py` and `tiktok.py`.
+- Verified secure permissions are applied on initialization.
+
+### File List
+
+- cookie_manager.py
+- main.py
+- tiktok.py
+- tests/test_cookies.py

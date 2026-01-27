@@ -1,6 +1,6 @@
 # Story 3.1: Upload Video Content
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ so that content appears correctly in channels.
 
 ## Tasks / Subtasks
 
-- [ ] Implement video upload to Telegram (AC: 1,2,3,4,5)
-  - [ ] Use Telegram Bot API sendVideo
-  - [ ] Set caption with original_caption and attribution
-  - [ ] Ensure bot is admin to prevent compression
-  - [ ] Handle upload response and store message_id
+- [x] Implement video upload to Telegram (AC: 1,2,3,4,5)
+  - [x] Use Telegram Bot API sendVideo
+  - [x] Set caption with original_caption and attribution
+  - [x] Ensure bot is admin to prevent compression
+  - [x] Handle upload response and store message_id
 
 ## Dev Notes
 
@@ -46,3 +46,22 @@ so that content appears correctly in channels.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Amelia (Dev Agent) - Zencoder
+
+### Debug Log References
+
+- Verified `send_video` call with `ANY` for file stream in tests.
+- Caption formatting logic moved to `_format_caption` helper.
+
+### Completion Notes List
+
+- Implemented `upload_video` in `telegram_uploader.py`.
+- Added retry logic using `tenacity`.
+- Verified caption formatting: `{caption}\n\n— @{creator}`.
+- Added support for `message_thread_id` (Topic routing).
+
+### File List
+
+- telegram_uploader.py
+- tests/test_telegram_uploader.py
