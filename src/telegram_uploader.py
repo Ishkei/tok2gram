@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import subprocess
 from typing import List, Optional
 from telegram import Bot, InputMediaPhoto, InputMediaVideo
 from telegram.constants import ParseMode
@@ -7,6 +8,33 @@ from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("tok2gram.telegram")
+
+
+def _has_video_stream(path: str) -> bool:
+    """Return True if ffprobe detects at least one video stream."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "csv=p=0",
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return proc.returncode == 0 and bool((proc.stdout or "").strip())
+    except Exception:
+        # If ffprobe isn't available for some reason, assume it's a video.
+        return True
 
 class TelegramUploader:
     def __init__(self, token: str, chat_id: str):
@@ -26,6 +54,32 @@ class TelegramUploader:
         target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
         logger.info(f"Uploading video for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
+
+        # Some downloads can be audio-only (e.g. .m4a). If we try to send those as
+        # a video, Telegram Desktop can show "Video.Unsupported.Desktop".
+        # In that case, fall back to sending as audio so it plays everywhere.
+        if not _has_video_stream(video_path):
+            logger.warning(
+                "File has no video stream; sending as audio instead: %s",
+                video_path,
+            )
+            try:
+                with open(video_path, 'rb') as audio:
+                    message = await self.bot.send_audio(
+                        chat_id=target_chat,
+                        audio=audio,
+                        caption=caption,
+                        message_thread_id=message_thread_id,
+                        read_timeout=60,
+                        write_timeout=60,
+                        connect_timeout=60,
+                        pool_timeout=60,
+                    )
+                    logger.info(f"Successfully uploaded audio: {message.message_id}")
+                    return message.message_id
+            except Exception as e:
+                logger.error(f"Failed to upload audio {post.post_id}: {e}")
+                raise
         
         try:
             with open(video_path, 'rb') as video:
@@ -34,6 +88,7 @@ class TelegramUploader:
                     video=video,
                     caption=caption,
                     message_thread_id=message_thread_id,
+                    supports_streaming=True,
                     read_timeout=60,
                     write_timeout=60,
                     connect_timeout=60,

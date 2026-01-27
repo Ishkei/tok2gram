@@ -1,11 +1,103 @@
 import yt_dlp
 import logging
 import os
+import subprocess
+import tempfile
+from pathlib import Path
+
 import requests
+
 from .tiktok_api import Post
 from typing import Optional, List
 
 logger = logging.getLogger("tok2gram.downloader")
+
+
+def _transcode_to_telegram_mp4(input_path: str) -> str:
+    """Ensure Telegram Desktop can preview the video.
+
+    Telegram Desktop is picky about container/codec combinations. TikTok downloads
+    can end up as:
+    - audio-only files (e.g. .m4a)
+    - MP4 with unsupported video codec (e.g. AV1/H.265)
+    - MP4 missing faststart (moov atom at end), causing bad preview/streaming
+
+    This function forces a widely-supported baseline:
+    - container: MP4
+    - video: H.264 (libx264) + yuv420p
+    - audio: AAC
+    - faststart: +faststart
+    """
+
+    src = Path(input_path)
+
+    # If ffmpeg isn't installed, keep the original file.
+    try:
+        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except Exception:
+        logger.warning("ffmpeg not found; skipping Telegram-compatibility transcode")
+        return input_path
+
+    # Keep output alongside input.
+    out_path = src.with_suffix(".mp4")
+    if out_path.resolve() == src.resolve():
+        # avoid clobbering in-place; write to temp then replace
+        out_path = src.with_name(f"{src.stem}.telegram.mp4")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", dir=str(src.parent)) as tmp:
+        tmp_path = Path(tmp.name)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(tmp_path),
+    ]
+
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if proc.returncode != 0:
+            logger.warning(
+                "ffmpeg transcode failed; uploading original file instead. ffmpeg output: %s",
+                (proc.stdout or "").strip()[-4000:],
+            )
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return input_path
+
+        # Replace/rename output atomically
+        try:
+            tmp_path.replace(out_path)
+        except Exception:
+            # fallback: keep temp output
+            out_path = tmp_path
+
+        logger.info("Transcoded for Telegram Desktop preview: %s -> %s", src, out_path)
+        return str(out_path)
+    finally:
+        # Cleanup temp if it still exists and wasn't moved
+        try:
+            if tmp_path.exists() and tmp_path != out_path:
+                tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 def download_post(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[List[str]]:
     """
@@ -33,8 +125,10 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
     # Filename pattern: {post_id}.mp4
     output_template = os.path.join(creator_path, f"{post.post_id}.%(ext)s")
     
+    # Prefer MP4 downloads (helps Telegram compatibility) and avoid formats that
+    # frequently produce audio-only outputs.
     ydl_opts = {
-        'format': 'bv*+ba/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'merge_output_format': 'mp4',
         'outtmpl': output_template,
         'quiet': True,
@@ -42,7 +136,11 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
         'concurrent_fragment_downloads': 2,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        }
+        },
+        # Put the moov atom up front when possible (better streaming/preview)
+        'postprocessor_args': {
+            'ffmpeg': ['-movflags', '+faststart'],
+        },
     }
     
     actual_cookie = cookie_content
@@ -66,7 +164,8 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
                 
             if os.path.exists(filename):
                 logger.info(f"Successfully downloaded video: {filename}")
-                return filename
+                # Enforce Telegram Desktop-friendly MP4 (H.264/AAC + faststart)
+                return _transcode_to_telegram_mp4(filename)
             else:
                 logger.error(f"Download finished but file not found: {filename}")
                 return None
