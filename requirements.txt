@@ -4,3 +4,4 @@ PyYAML
 tenacity
 requests
 pytest-asyncio
+gallery-dl

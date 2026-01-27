@@ -270,9 +270,74 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
         logger.error(f"Failed to download video {post.post_id}: {e}")
         return None
 
-def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _is_gallery_dl_available() -> bool:
+    """Check if gallery-dl is available on the system."""
+    try:
+        subprocess.run(
+            ["gallery-dl", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _download_slideshow_gallery_dl(post: Post, output_path: str) -> Optional[Dict[str, Any]]:
     """
-    Download a TikTok slideshow (multiple images).
+    Download TikTok slideshow images using gallery-dl.
+    Returns dict with 'images' list and optional 'audio' path.
+    """
+    os.makedirs(output_path, exist_ok=True)
+
+    command = [
+        "gallery-dl",
+        "--directory", output_path,
+        "--filename", "{num:>02}.{extension}",
+        post.url,
+    ]
+
+    logger.info(f"Running gallery-dl for slideshow {post.post_id}: {' '.join(command)}")
+
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        logger.debug(f"gallery-dl stdout: {result.stdout}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"gallery-dl failed for {post.post_id}: {e.stderr}")
+        return None
+
+    # Collect downloaded image files
+    downloaded_files: List[str] = []
+    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+    
+    if os.path.exists(output_path):
+        for filename in sorted(os.listdir(output_path)):
+            filepath = os.path.join(output_path, filename)
+            if os.path.isfile(filepath):
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in image_extensions:
+                    downloaded_files.append(filepath)
+                    logger.info(f"Found downloaded image: {filepath}")
+
+    if not downloaded_files:
+        logger.error(f"gallery-dl completed but no images found in {output_path}")
+        return None
+
+    # gallery-dl doesn't download audio separately for TikTok slideshows
+    # Audio would need to be extracted via yt-dlp if needed
+    return {"images": downloaded_files, "audio": None}
+
+
+def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Fallback slideshow download using yt-dlp metadata extraction and direct HTTP requests.
+    Used when gallery-dl is not available or fails.
     """
     creator_path = os.path.join(base_download_path, post.creator, post.post_id)
     os.makedirs(creator_path, exist_ok=True)
@@ -388,3 +453,26 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
     except Exception as e:
         logger.error(f"Failed to download slideshow {post.post_id}: {e}")
         return None
+
+
+def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Download a TikTok slideshow (multiple images).
+    
+    Uses gallery-dl as the primary method for photo posts (more reliable for TikTok images).
+    Falls back to yt-dlp/HTML parsing if gallery-dl is unavailable or fails.
+    """
+    creator_path = os.path.join(base_download_path, post.creator, post.post_id)
+    
+    # Try gallery-dl first (preferred for TikTok photo posts)
+    if _is_gallery_dl_available():
+        logger.info(f"Using gallery-dl for slideshow {post.post_id}")
+        result = _download_slideshow_gallery_dl(post, creator_path)
+        if result and result.get("images"):
+            return result
+        logger.warning(f"gallery-dl failed for {post.post_id}, falling back to yt-dlp/HTML method")
+    else:
+        logger.info(f"gallery-dl not available, using fallback method for slideshow {post.post_id}")
+    
+    # Fallback to yt-dlp/HTML parsing method
+    return _download_slideshow_fallback(post, base_download_path, cookie_path, cookie_content)
