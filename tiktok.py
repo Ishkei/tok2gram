@@ -15,7 +15,7 @@ class Post:
     caption: str
     created_at: Optional[int]  # unix epoch
 
-def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None) -> List[Post]:
+def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> List[Post]:
     """
     Fetch latest posts for a TikTok user using yt-dlp metadata extraction.
     """
@@ -33,11 +33,13 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
         }
     }
     
-    if cookie_path and os.path.exists(cookie_path):
+    actual_cookie = cookie_content
+    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
         with open(cookie_path, 'r') as f:
-            cookie_content = f.read().strip()
-            if cookie_content:
-                ydl_opts['http_headers']['Cookie'] = cookie_content
+            actual_cookie = f.read().strip()
+
+    if actual_cookie:
+        ydl_opts['http_headers']['Cookie'] = actual_cookie
 
     posts = []
     
@@ -55,9 +57,13 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                     
                 caption = entry.get('description') or entry.get('title') or ""
                 
+                # Prioritize video over slideshow for mixed media
+                # yt-dlp flat-extract often marks slideshows as 'playlist' in _type or type
                 kind = 'video'
                 if entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow':
-                    kind = 'slideshow'
+                    # Only mark as slideshow if it's NOT explicitly marked as a video elsewhere
+                    if entry.get('_type') != 'video':
+                        kind = 'slideshow'
                 
                 post = Post(
                     post_id=entry.get('id'),

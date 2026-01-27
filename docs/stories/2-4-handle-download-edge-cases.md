@@ -1,6 +1,6 @@
 # Story 2.4: Handle Download Edge Cases
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -22,13 +22,13 @@ so that all content types are processed appropriately.
 
 ## Tasks / Subtasks
 
-- [ ] Handle pinned posts (AC: 1,3)
-  - [ ] Detect pinned status
-  - [ ] Download once regardless of pin
-- [ ] Handle reposts (AC: 4,6)
-  - [ ] Treat deleted/reposted as new based on post_id
-- [ ] Handle mixed media (AC: 7,9)
-  - [ ] Prioritize video over photos in mixed posts
+- [x] Handle pinned posts (AC: 1,3)
+  - [x] Detect pinned status
+  - [x] Download once regardless of pin
+- [x] Handle reposts (AC: 4,6)
+  - [x] Treat deleted/reposted as new based on post_id
+- [x] Handle mixed media (AC: 7,9)
+  - [x] Prioritize video over photos in mixed posts
 
 ## Dev Notes
 

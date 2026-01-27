@@ -8,10 +8,10 @@ logging.basicConfig(level=logging.INFO)
 def smoke_test():
     # Use a real TikTok URL for testing
     post = Post(
-        post_id="7462618991475756321", # Just an example ID
-        creator="khaby.lame",
+        post_id="7580769030701681942", # Just an example ID
+        creator="adrynalynbeats",
         kind="video",
-        url="https://www.tiktok.com/@khaby.lame/video/7462618991475756321",
+        url="https://www.tiktok.com/@adrynalynbeats/video/7580769030701681942?is",
         caption="test download",
         created_at=None
     )

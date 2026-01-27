@@ -1,6 +1,6 @@
 # Story 5.1: Use TikTok Cookies for Anti-Block
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,12 +18,12 @@ so that access is not blocked by TikTok.
 
 ## Tasks / Subtasks
 
-- [ ] Load cookies from cookies/ directory (AC: 1,4,5)
-  - [ ] Read cookie files
-  - [ ] Set secure permissions (chmod 600)
-- [ ] Include cookies in yt-dlp requests (AC: 2,3)
-  - [ ] Configure yt-dlp with cookie jar
-  - [ ] Use cookies for all TikTok fetches
+- [x] Load cookies from cookies/ directory (AC: 1,4,5)
+  - [x] Read cookie files
+  - [x] Set secure permissions (chmod 600)
+- [x] Include cookies in yt-dlp requests (AC: 2,3)
+  - [x] Configure yt-dlp with cookie jar
+  - [x] Use cookies for all TikTok fetches
 
 ## Dev Notes
 

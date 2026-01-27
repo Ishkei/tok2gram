@@ -18,20 +18,22 @@ class TelegramUploader:
         return f"{caption}\n\n— @{post.creator}"
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def upload_video(self, post: Post, video_path: str) -> Optional[int]:
+    async def upload_video(self, post: Post, video_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
         """
         Upload a single video to Telegram.
         Returns the message_id if successful.
         """
+        target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
-        logger.info(f"Uploading video for post {post.post_id} to {self.chat_id}")
+        logger.info(f"Uploading video for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
         
         try:
             with open(video_path, 'rb') as video:
                 message = await self.bot.send_video(
-                    chat_id=self.chat_id,
+                    chat_id=target_chat,
                     video=video,
                     caption=caption,
+                    message_thread_id=message_thread_id,
                     read_timeout=60,
                     write_timeout=60,
                     connect_timeout=60,
@@ -44,7 +46,7 @@ class TelegramUploader:
             raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def upload_slideshow(self, post: Post, image_paths: List[str]) -> Optional[int]:
+    async def upload_slideshow(self, post: Post, image_paths: List[str], chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
         """
         Upload multiple images as a media group.
         Returns the first message_id if successful.
@@ -52,8 +54,9 @@ class TelegramUploader:
         if not image_paths:
             return None
 
+        target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
-        logger.info(f"Uploading slideshow for post {post.post_id} to {self.chat_id} ({len(image_paths)} images)")
+        logger.info(f"Uploading slideshow for post {post.post_id} to {target_chat} (thread: {message_thread_id}) ({len(image_paths)} images)")
 
         media = []
         for i, path in enumerate(image_paths):
@@ -64,8 +67,9 @@ class TelegramUploader:
 
         try:
             messages = await self.bot.send_media_group(
-                chat_id=self.chat_id,
+                chat_id=target_chat,
                 media=media,
+                message_thread_id=message_thread_id,
                 read_timeout=60,
                 write_timeout=60,
                 connect_timeout=60,

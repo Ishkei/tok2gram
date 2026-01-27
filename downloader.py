@@ -7,21 +7,21 @@ from typing import Optional, List
 
 logger = logging.getLogger("tok2gram.downloader")
 
-def download_post(post: Post, base_download_path: str, cookie_path: Optional[str] = None) -> Optional[List[str]]:
+def download_post(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[List[str]]:
     """
     Dispatch download based on post kind.
     Returns a list of file paths.
     """
     if post.kind == 'video':
-        path = download_video(post, base_download_path, cookie_path)
+        path = download_video(post, base_download_path, cookie_path, cookie_content)
         return [path] if path else None
     elif post.kind == 'slideshow':
-        return download_slideshow(post, base_download_path, cookie_path)
+        return download_slideshow(post, base_download_path, cookie_path, cookie_content)
     else:
         logger.error(f"Unknown post kind: {post.kind}")
         return None
 
-def download_video(post: Post, base_download_path: str, cookie_path: Optional[str] = None) -> Optional[str]:
+def download_video(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[str]:
     """
     Download a TikTok video post using yt-dlp.
     Returns the path to the downloaded file.
@@ -45,12 +45,13 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
         }
     }
     
-    # Handle cookie similar to tiktok.py
-    if cookie_path and os.path.exists(cookie_path):
+    actual_cookie = cookie_content
+    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
         with open(cookie_path, 'r') as f:
-            cookie_content = f.read().strip()
-            if cookie_content:
-                ydl_opts['http_headers']['Cookie'] = cookie_content
+            actual_cookie = f.read().strip()
+
+    if actual_cookie:
+        ydl_opts['http_headers']['Cookie'] = actual_cookie
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -74,7 +75,7 @@ def download_video(post: Post, base_download_path: str, cookie_path: Optional[st
         logger.error(f"Failed to download video {post.post_id}: {e}")
         return None
 
-def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None) -> Optional[List[str]]:
+def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[List[str]]:
     """
     Download a TikTok slideshow (multiple images).
     """
@@ -89,11 +90,13 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
         }
     }
 
-    if cookie_path and os.path.exists(cookie_path):
+    actual_cookie = cookie_content
+    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
         with open(cookie_path, 'r') as f:
-            cookie_content = f.read().strip()
-            if cookie_content:
-                ydl_opts['http_headers']['Cookie'] = cookie_content
+            actual_cookie = f.read().strip()
+
+    if actual_cookie:
+        ydl_opts['http_headers']['Cookie'] = actual_cookie
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

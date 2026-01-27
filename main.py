@@ -8,6 +8,7 @@ from tiktok import fetch_posts, sort_posts_chronologically
 from downloader import download_post
 from state import StateStore
 from telegram_uploader import TelegramUploader
+from cookie_manager import CookieManager
 
 # Configure logging
 logging.basicConfig(
@@ -20,11 +21,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tok2gram")
 
-async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader):
+async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
     username = creator_config['username']
     chat_id = creator_config.get('telegram_chat_id') or settings.get('telegram_chat_id')
     fetch_depth = settings.get('fetch_depth', 10)
-    cookie_path = settings.get('cookie_path')
 
     if not chat_id:
         logger.error(f"No chat_id specified for creator {username}")
@@ -32,7 +32,15 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
 
     logger.info(f"Processing creator: {username}")
     
-    posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path)
+    cookie_content = cookie_manager.get_cookie_content()
+    posts = fetch_posts(username, depth=fetch_depth, cookie_content=cookie_content)
+    
+    if not posts and cookie_manager.cookie_files:
+        logger.warning(f"No posts found for {username}, attempting cookie rotation...")
+        cookie_manager.rotate()
+        cookie_content = cookie_manager.get_cookie_content()
+        posts = fetch_posts(username, depth=fetch_depth, cookie_content=cookie_content)
+
     sorted_posts = sort_posts_chronologically(posts)
     
     new_posts_count = 0
@@ -43,7 +51,7 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.info(f"New post found: {post.post_id} ({post.kind})")
         
         # Download
-        file_paths = download_post(post, "downloads", cookie_path)
+        file_paths = download_post(post, "downloads", cookie_content=cookie_content)
         if not file_paths:
             logger.error(f"Failed to download post {post.post_id}")
             continue
@@ -83,15 +91,19 @@ async def main():
         
         state = StateStore("state.db")
         uploader = TelegramUploader(
-            token=settings['telegram_bot_token'],
+            token=config['telegram']['bot_token'],
             chat_id=settings.get('telegram_chat_id')
         )
         
+        cookie_manager = CookieManager("cookies")
+        
         for creator in creators:
-            await process_creator(creator, settings, state, uploader)
+            await process_creator(creator, settings, state, uploader, cookie_manager)
             
             # Delay between creators to avoid TikTok blocks
-            delay = random.uniform(30, 60)
+            min_delay = settings.get('delay_between_creators_seconds_min', 30)
+            max_delay = settings.get('delay_between_creators_seconds_max', 60)
+            delay = random.uniform(min_delay, max_delay)
             logger.info(f"Waiting {delay:.1f}s before next creator...")
             await asyncio.sleep(delay)
             

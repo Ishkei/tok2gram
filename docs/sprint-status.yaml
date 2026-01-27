@@ -7,22 +7,22 @@
 
 development_status:
   epic-1: done
-  epic-2: in-progress
-  epic-3: backlog
-  epic-4: backlog
-  epic-5: backlog
+  epic-2: done
+  epic-3: done
+  epic-4: in-progress
+  epic-5: done
   1-1-load-configuration-and-creators: done
   1-2-fetch-latest-posts-from-tiktok: done
   1-3-sort-posts-chronologically: done
   2-1-check-for-processed-posts: done
   2-2-download-video-content: done
-  2-3-download-slideshow-content: ready-for-dev
-  2-4-handle-download-edge-cases: ready-for-dev
-  3-1-upload-video-content: ready-for-dev
-  3-2-upload-slideshow-as-media-group: ready-for-dev
-  3-3-implement-upload-retry-logic: ready-for-dev
-  3-4-route-uploads-to-specified-destinations: ready-for-dev
-  4-1-store-processed-post-ids-in-sqlite-state-db: ready-for-dev
-  5-1-use-tiktok-cookies-for-anti-block: ready-for-dev
-  5-2-rotate-cookies-on-failure: ready-for-dev
-  5-3-implement-conservative-polling-and-random-delays: ready-for-dev
+  2-3-download-slideshow-content: done
+  2-4-handle-download-edge-cases: done
+  3-1-upload-video-content: done
+  3-2-upload-slideshow-as-media-group: done
+  3-3-implement-upload-retry-logic: done
+  3-4-route-uploads-to-specified-destinations: done
+  4-1-store-processed-post-ids-in-sqlite-state-db: done
+  5-1-use-tiktok-cookies-for-anti-block: done
+  5-2-rotate-cookies-on-failure: done
+  5-3-implement-conservative-polling-and-random-delays: done

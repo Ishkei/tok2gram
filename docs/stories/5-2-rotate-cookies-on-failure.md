@@ -1,6 +1,6 @@
 # Story 5.2: Rotate Cookies on Failure
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,13 +18,13 @@ so that blocked cookies don't prevent access.
 
 ## Tasks / Subtasks
 
-- [ ] Detect fetch failures (AC: 1,2)
-  - [ ] Identify blocking-related errors
-- [ ] Implement cookie rotation (AC: 3,4)
-  - [ ] Cycle through available cookies
-  - [ ] Update yt-dlp configuration
-- [ ] Log rotation events (AC: 5)
-  - [ ] Record cookie switches in logs
+- [x] Detect fetch failures (AC: 1,2)
+  - [x] Identify blocking-related errors
+- [x] Implement cookie rotation (AC: 3,4)
+  - [x] Cycle through available cookies
+  - [x] Update yt-dlp configuration
+- [x] Log rotation events (AC: 5)
+  - [x] Record cookie switches in logs
 
 ## Dev Notes
 

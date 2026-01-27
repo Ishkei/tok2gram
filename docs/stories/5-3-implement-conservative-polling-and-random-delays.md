@@ -1,6 +1,6 @@
 # Story 5.3: Implement Conservative Polling and Random Delays
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,14 +18,14 @@ so that requests appear human-like and avoid detection.
 
 ## Tasks / Subtasks
 
-- [ ] Add random delays between fetches (AC: 3,4)
-  - [ ] Implement jitter ranges
-  - [ ] Use random delays
-- [ ] Configure polling parameters (AC: 1,5)
-  - [ ] Load from config.yaml
-  - [ ] Set conservative defaults
-- [ ] Apply delays in fetch loop (AC: 2)
-  - [ ] Delay between creator fetches
+- [x] Add random delays between fetches (AC: 3,4)
+  - [x] Implement jitter ranges
+  - [x] Use random delays
+- [x] Configure polling parameters (AC: 1,5)
+  - [x] Load from config.yaml
+  - [x] Set conservative defaults
+- [x] Apply delays in fetch loop (AC: 2)
+  - [x] Delay between creator fetches
 
 ## Dev Notes
 

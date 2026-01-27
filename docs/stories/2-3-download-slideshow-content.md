@@ -1,6 +1,6 @@
 # Story 2.3: Download Slideshow Content
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ so that photo content is available for upload.
 
 ## Tasks / Subtasks
 
-- [ ] Implement slideshow download logic (AC: 1,2,3,4,5)
-  - [ ] Extract all image URLs from slideshow post
-  - [ ] Download each image preserving original quality
-  - [ ] Save images to structured download folders
-  - [ ] Maintain image order for upload
+- [x] Implement slideshow download logic (AC: 1,2,3,4,5)
+  - [x] Extract all image URLs from slideshow post
+  - [x] Download each image preserving original quality
+  - [x] Save images to structured download folders
+  - [x] Maintain image order for upload
 
 ## Dev Notes
 

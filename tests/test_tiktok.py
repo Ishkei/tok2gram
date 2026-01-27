@@ -36,6 +36,53 @@ def test_fetch_posts_success(mock_ytdl):
     assert posts[0].post_id == 'post1'
     assert posts[0].creator == 'creator1'
 
+@patch('tiktok.yt_dlp.YoutubeDL')
+def test_fetch_posts_slideshow_detection(mock_ytdl):
+    # Mock yt-dlp response for slideshow
+    mock_instance = mock_ytdl.return_value.__enter__.return_value
+    mock_instance.extract_info.return_value = {
+        'entries': [
+            {
+                'id': 'slide1',
+                'webpage_url': 'url1',
+                'description': 'caption1',
+                'timestamp': 1600000000,
+                '_type': 'playlist' # yt-dlp flat-extract often marks slideshows as playlist
+            },
+            {
+                'id': 'slide2',
+                'webpage_url': 'url2',
+                'description': 'caption2',
+                'timestamp': 1600000500,
+                'type': 'slideshow' # some versions might use 'type'
+            }
+        ]
+    }
+    
+    posts = fetch_posts("creator1", depth=10)
+    assert len(posts) == 2
+    assert posts[0].kind == 'slideshow'
+    assert posts[1].kind == 'slideshow'
+
+@patch('tiktok.yt_dlp.YoutubeDL')
+def test_fetch_posts_mixed_media_prioritization(mock_ytdl):
+    # Mock mixed media (video metadata + playlist type)
+    mock_instance = mock_ytdl.return_value.__enter__.return_value
+    mock_instance.extract_info.return_value = {
+        'entries': [
+            {
+                'id': 'mixed1',
+                'webpage_url': 'url1',
+                '_type': 'video', 
+                'type': 'slideshow' # Contradictory, should favor video
+            }
+        ]
+    }
+    
+    posts = fetch_posts("creator1", depth=10)
+    assert len(posts) == 1
+    assert posts[0].kind == 'video'
+
 def test_sort_posts_chronologically():
     p1 = Post("1", "c1", "v", "u1", "cap1", 1000)
     p2 = Post("2", "c1", "v", "u2", "cap2", 500)
