@@ -23,7 +23,8 @@ async def test_upload_video_success(mock_bot):
 
 @pytest.mark.asyncio
 @patch('telegram_uploader.Bot')
-async def test_upload_slideshow_success(mock_bot):
+@patch('telegram_uploader.InputMediaPhoto')
+async def test_upload_slideshow_success(mock_media_photo, mock_bot):
     uploader = TelegramUploader("token", "chat_id")
     post = Post("slide1", "creator1", "slideshow", "https://tiktok.com/slide1", "caption", 1600000000)
     
@@ -32,6 +33,9 @@ async def test_upload_slideshow_success(mock_bot):
     mock_message = MagicMock()
     mock_message.message_id = 456
     mock_bot_instance.send_media_group = AsyncMock(return_value=[mock_message])
+    
+    # Mock InputMediaPhoto to return a mock object
+    mock_media_photo.side_effect = lambda media, caption=None: MagicMock(media=media, caption=caption)
     
     with patch('builtins.open', MagicMock()):
         message_id = await uploader.upload_slideshow(post, ["img1.jpg", "img2.jpg"])
