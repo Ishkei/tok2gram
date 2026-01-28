@@ -14,11 +14,11 @@ logging.basicConfig(level=logging.INFO)
 async def smoke_test():
     # Use a real TikTok URL for testing
     post = Post(
-        post_id="7599431065421335838", 
+        post_id="7600025807024606494", 
         creator="edstarginfiniteet",
         kind="slideshow",
-        url="https://www.tiktok.com/@edstarginfiniteet/photo/7599431065421335838",
-        caption="test slideshow download",
+        url="https://www.tiktok.com/@rebelsoulrudegyal/photo/7600025807024606494",
+        caption="test slideshow download with images",
         created_at=None
     )
     
