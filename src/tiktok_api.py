@@ -18,7 +18,7 @@ def _probe_kind(url: str, ydl_base_opts: dict) -> str:
     probe_opts["no_warnings"] = True
 
     try:
-        with yt_dlp.YoutubeDL(probe_opts) as ydl:
+        with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore
             info = ydl.extract_info(url, download=False)
 
         # Strong signal: playlist / entries => slideshow-like
@@ -79,14 +79,15 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     posts = []
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
             info = ydl.extract_info(url, download=False)
             
             if not info or 'entries' not in info:
                 logger.warning(f"No posts found for creator: {username}")
                 return []
-            
-            for entry in info['entries']:
+
+            entries = info['entries']
+            for entry in entries:  # type: ignore
                 if not entry:
                     continue
                     
