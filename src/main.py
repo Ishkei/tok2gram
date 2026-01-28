@@ -4,6 +4,11 @@ import asyncio
 import time
 import random
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from core.config_loader import load_config, load_creators
 from tiktok.fetcher import fetch_posts, sort_posts_chronologically
 from tiktok.downloader import download_post

@@ -246,6 +246,24 @@ tok2gram/
 
 ## Development
 
+### Security & Secret Scanning
+
+This project uses **GitGuardian (ggshield)** to prevent accidental leaks of secrets (like Telegram Bot Tokens).
+
+#### Local Scanning
+To scan your local repository for secrets:
+```bash
+pip install ggshield
+ggshield auth login
+ggshield secret scan path .
+```
+
+#### Pre-commit Hook
+It is highly recommended to install the pre-commit hook to scan every commit automatically:
+```bash
+ggshield install --mode local
+```
+
 ### Running in Development
 
 1. **Activate virtual environment**:

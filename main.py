@@ -3,6 +3,12 @@ import sys
 import asyncio
 import time
 import random
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from src.config_loader import load_config, load_creators
 from src.tiktok_api import fetch_posts, sort_posts_chronologically
 from src.downloader import download_post
