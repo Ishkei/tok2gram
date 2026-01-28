@@ -12,7 +12,7 @@ except ImportError:
 from src.config_loader import load_config, load_creators
 from src.tiktok_api import fetch_posts, sort_posts_chronologically
 from src.downloader import download_post
-from src.state import StateStore
+from src.core.state import StateStore
 from src.telegram_uploader import TelegramUploader
 from src.cookie_manager import CookieManager
 
