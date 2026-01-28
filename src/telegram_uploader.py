@@ -2,7 +2,7 @@ import logging
 import asyncio
 import subprocess
 from typing import List, Optional
-from telegram import Bot, InputMediaPhoto, InputFile
+from telegram import Bot, InputMediaPhoto
 from telegram.constants import ParseMode
 from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -164,9 +164,9 @@ class TelegramUploader:
             media = []
             for i, path in enumerate(chunk_paths):
                 if chunk_idx == 0 and i == 0:
-                    media.append(InputMediaPhoto(media=InputFile(path), caption=caption))
+                    media.append(InputMediaPhoto(media=path, caption=caption))
                 else:
-                    media.append(InputMediaPhoto(media=InputFile(path)))
+                    media.append(InputMediaPhoto(media=path))
             
             try:
                 messages = await Bot.send_media_group(

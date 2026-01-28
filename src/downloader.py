@@ -315,15 +315,17 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str) -> Optional[Dic
     # Collect downloaded image files
     downloaded_files: List[str] = []
     image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-    
+
     if os.path.exists(output_path):
         for filename in sorted(os.listdir(output_path)):
             filepath = os.path.join(output_path, filename)
             if os.path.isfile(filepath):
                 ext = os.path.splitext(filename)[1].lower()
                 if ext in image_extensions:
-                    downloaded_files.append(filepath)
-                    logger.info(f"Found downloaded image: {filepath}")
+                    # Use absolute path to ensure Telegram upload can find the file
+                    abs_path = os.path.abspath(filepath)
+                    downloaded_files.append(abs_path)
+                    logger.info(f"Found downloaded image: {abs_path}")
 
     if not downloaded_files:
         logger.error(f"gallery-dl completed but no images found in {output_path}")
