@@ -45,6 +45,9 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# Video files
+*.mp4
+
 # Translations
 *.mo
 *.pot
