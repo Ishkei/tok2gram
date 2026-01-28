@@ -39,6 +39,18 @@ def test_load_creators_valid(tmp_path):
     assert loaded[0]['username'] == 'user1'
     assert loaded[1]['topic_id'] == 123
 
+def test_load_config_env_override(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.yaml"
+    config_data = {
+        'telegram': {'bot_token': 'yaml_token'},
+        'settings': {'fetch_depth': 10}
+    }
+    config_file.write_text(yaml.dump(config_data))
+    
+    monkeypatch.setenv('TELEGRAM_BOT_TOKEN', 'env_token')
+    loaded = load_config(str(config_file))
+    assert loaded['telegram']['bot_token'] == 'env_token'
+
 def test_load_config_missing_file():
     with pytest.raises(FileNotFoundError):
         load_config("non_existent.yaml")

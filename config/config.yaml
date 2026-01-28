@@ -1,5 +1,5 @@
 telegram:
-  bot_token: "8513563042:AAGtDANcIevOFl8S-zWC7EYdeYQh6EZht_s"
+  bot_token: "YOUR_BOT_TOKEN_HERE"
 
 settings:
   fetch_depth: 10

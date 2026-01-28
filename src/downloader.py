@@ -224,6 +224,9 @@ def download_post(post: Post, base_download_path: str, cookie_path: Optional[str
         # /video/ URL.
         result = download_slideshow(post, base_download_path, cookie_path, cookie_content)
         if result:
+            if 'video' in result and 'images' not in result:
+                logger.info(f"Slideshow downloader returned a video for {post.post_id}; updating kind to video")
+                post.kind = 'video'
             return result
         # Slideshow extraction failed; attempt to treat as a video. Reconstruct
         # the video URL by replacing /photo/ with /video/ if present. If not
@@ -383,28 +386,45 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Op
         logger.error(f"gallery-dl failed for {post.post_id}: {e.stderr}")
         return None
 
-    # Collect downloaded image files
-    downloaded_files: List[str] = []
+    # Collect downloaded files
+    image_files: List[str] = []
+    video_files: List[str] = []
+    audio_files: List[str] = []
+    
     image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+    video_extensions = {'.mp4', '.mkv', '.webm', '.mov'}
+    audio_extensions = {'.mp3', '.m4a', '.wav', '.ogg'}
 
     if os.path.exists(output_path):
         for filename in sorted(os.listdir(output_path)):
             filepath = os.path.join(output_path, filename)
             if os.path.isfile(filepath):
                 ext = os.path.splitext(filename)[1].lower()
+                abs_path = os.path.abspath(filepath)
                 if ext in image_extensions:
-                    # Use absolute path to ensure Telegram upload can find the file
-                    abs_path = os.path.abspath(filepath)
-                    downloaded_files.append(abs_path)
+                    image_files.append(abs_path)
                     logger.info(f"Found downloaded image: {abs_path}")
+                elif ext in video_extensions:
+                    video_files.append(abs_path)
+                    logger.info(f"Found downloaded video: {abs_path}")
+                elif ext in audio_extensions:
+                    audio_files.append(abs_path)
+                    logger.info(f"Found downloaded audio: {abs_path}")
 
-    if not downloaded_files:
-        logger.error(f"gallery-dl completed but no images found in {output_path}")
+    # If gallery-dl downloaded a video for what we thought was a slideshow,
+    # return it as a video.
+    if video_files and not image_files:
+        logger.info(f"gallery-dl downloaded a video instead of images for {post.post_id}")
+        return {"video": video_files[0]}
+
+    if not image_files:
+        logger.error(f"gallery-dl completed but no images or video found in {output_path}")
         return None
 
-    # gallery-dl doesn't download audio separately for TikTok slideshows
-    # Audio would need to be extracted via yt-dlp if needed
-    return {"images": downloaded_files, "audio": None}
+    # Pick the first audio file if any
+    audio_path = audio_files[0] if audio_files else None
+    
+    return {"images": image_files, "audio": audio_path}
 
 
 def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -557,7 +577,7 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
     if _is_gallery_dl_available():
         logger.info(f"Using gallery-dl for slideshow {post.post_id}")
         result = _download_slideshow_gallery_dl(post, creator_path, cookie_path=cookie_path, cookie_content=cookie_content)
-        if result and result.get("images"):
+        if result and (result.get("images") or result.get("video")):
             return result
         logger.warning(f"gallery-dl failed for {post.post_id}, falling back to yt-dlp/HTML method")
     else:

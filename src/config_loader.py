@@ -11,9 +11,16 @@ def load_config(file_path):
         except yaml.YAMLError as e:
             raise ValueError(f"Error parsing config.yaml: {e}")
             
+    # Prioritize environment variable for bot token
+    env_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if env_token:
+        if 'telegram' not in config:
+            config['telegram'] = {}
+        config['telegram']['bot_token'] = env_token
+        
     # Simple validation
-    if 'telegram' not in config or 'bot_token' not in config['telegram']:
-        raise ValueError("config.yaml is missing telegram.bot_token")
+    if 'telegram' not in config or 'bot_token' not in config['telegram'] or not config['telegram']['bot_token']:
+        raise ValueError("Telegram bot token is missing. Set it in config.yaml or TELEGRAM_BOT_TOKEN environment variable.")
         
     return config
 

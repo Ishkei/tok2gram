@@ -130,3 +130,5 @@ Thumbs.db
 logs/
 downloads/
 cookies/
+config.yaml
+config/config.yaml
