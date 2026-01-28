@@ -202,7 +202,18 @@ def download_post(post: Post, base_download_path: str, cookie_path: Optional[str
     """
     if post.kind == 'video':
         path = download_video(post, base_download_path, cookie_path, cookie_content)
-        return {"video": path} if path else None
+        # If the video download failed (e.g. no formats found), attempt to treat the
+        # post as a slideshow as a fallback. Some TikTok slideshows can be misclassified
+        # as videos during the probe. Only fallback when no video file was returned.
+        if path:
+            return {"video": path}
+        else:
+            logger.warning(
+                f"Video download failed for {post.post_id}; attempting slideshow fallback"
+            )
+            # Fall back to slideshow downloader. Note: use post.kind as 'slideshow' is not modified; download_slideshow will not check kind.
+            result = download_slideshow(post, base_download_path, cookie_path, cookie_content)
+            return result
     elif post.kind == 'slideshow':
         return download_slideshow(post, base_download_path, cookie_path, cookie_content)
     else:

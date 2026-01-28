@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import subprocess
-from typing import List, Optional
+from typing import List, Optional, Any
 from telegram import Bot, InputMediaPhoto, InputFile
 from telegram.constants import ParseMode
 from .tiktok_api import Post
@@ -156,21 +156,62 @@ class TelegramUploader:
             start_idx = chunk_idx * MAX_ALBUM
             end_idx = min(start_idx + MAX_ALBUM, total_images)
             chunk_paths = image_paths[start_idx:end_idx]
-            
-            logger.info(f"Uploading chunk {chunk_idx + 1}/{num_chunks} with {len(chunk_paths)} images")
 
-            # Build media group for this chunk
-            # Only add caption to the first image of the first chunk
-            media = []
-            open_files = []
+            logger.info(
+                f"Uploading chunk {chunk_idx + 1}/{num_chunks} with {len(chunk_paths)} images"
+            )
+
+            # If there is only one image in this chunk, Telegram API does not support
+            # sending a media group with a single item. In that case, send it as a
+            # regular photo message instead. Only the first chunk should contain
+            # a caption.
+            if len(chunk_paths) == 1:
+                single_path = chunk_paths[0]
+                try:
+                    with open(single_path, "rb") as photo_file:
+                        # Only attach caption on the very first message of the first chunk
+                        photo_caption = caption if chunk_idx == 0 else None
+                        message = await Bot.send_photo(
+                            self.bot,
+                            chat_id=target_chat,
+                            photo=photo_file,
+                            caption=photo_caption,
+                            message_thread_id=message_thread_id,
+                            read_timeout=60,
+                            write_timeout=60,
+                            connect_timeout=60,
+                            pool_timeout=60,
+                        )
+                        logger.info(
+                            f"Successfully uploaded photo for chunk {chunk_idx + 1}/{num_chunks}: message_id={message.message_id}"
+                        )
+                        # Record the first message_id
+                        if chunk_idx == 0:
+                            first_message_id = message.message_id
+                except Exception as e:
+                    logger.error(
+                        f"Failed to upload photo for chunk {chunk_idx + 1}/{num_chunks} for post {post.post_id}: {e}"
+                    )
+                    raise
+                # Continue to next chunk without using album logic
+                continue
+
+            # Otherwise, build an album (media group) for this chunk.
+            media: List[InputMediaPhoto] = []
+            # Maintain strong references to opened file objects for the duration of the
+            # upload. Use typing.Any rather than the built‑in ``any`` function when
+            # declaring the list type to satisfy static type checkers like Pylance.
+            open_files: List[Any] = []
             for i, path in enumerate(chunk_paths):
-                f = open(path, 'rb')
-                open_files.append(f)  # Keep reference to prevent GC
+                f = open(path, "rb")
+                open_files.append(f)  # Keep reference to prevent GC until after sending
+                # For albums, pass file-like objects directly to InputMediaPhoto rather than wrapping
+                # them in InputFile, as wrapping can cause 'media not found' errors in some library versions.
                 if chunk_idx == 0 and i == 0:
-                    media.append(InputMediaPhoto(media=InputFile(f, filename=path), caption=caption))
+                    media.append(InputMediaPhoto(media=f, caption=caption))
                 else:
-                    media.append(InputMediaPhoto(media=InputFile(f, filename=path)))
-            
+                    media.append(InputMediaPhoto(media=f))
+
             try:
                 messages = await Bot.send_media_group(
                     self.bot,
@@ -180,18 +221,22 @@ class TelegramUploader:
                     read_timeout=60,
                     write_timeout=60,
                     connect_timeout=60,
-                    pool_timeout=60
+                    pool_timeout=60,
                 )
-                
+
                 chunk_message_ids = [m.message_id for m in messages]
-                logger.info(f"Successfully uploaded chunk {chunk_idx + 1}/{num_chunks}: message_ids={chunk_message_ids}")
-                
+                logger.info(
+                    f"Successfully uploaded chunk {chunk_idx + 1}/{num_chunks}: message_ids={chunk_message_ids}"
+                )
+
                 # Store the first message_id from the first chunk
                 if chunk_idx == 0 and messages:
                     first_message_id = messages[0].message_id
-                
+
             except Exception as e:
-                logger.error(f"Failed to upload chunk {chunk_idx + 1}/{num_chunks} for post {post.post_id}: {e}")
+                logger.error(
+                    f"Failed to upload chunk {chunk_idx + 1}/{num_chunks} for post {post.post_id}: {e}"
+                )
                 raise
             finally:
                 # Close all file handles after upload completes

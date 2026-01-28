@@ -1,4 +1,6 @@
 import yt_dlp
+import time
+import random
 import logging
 import os
 from dataclasses import dataclass
@@ -79,42 +81,71 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     posts = []
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
-            info = ydl.extract_info(url, download=False)
-            
-            if not info or 'entries' not in info:
-                logger.warning(f"No posts found for creator: {username}")
-                return []
-
-            entries = info['entries']
-            for entry in entries:  # type: ignore
-                if not entry:
+        # Retry extraction with exponential backoff when facing HTTP 429 rate limits.
+        max_attempts = 6
+        info = None
+        for attempt in range(max_attempts):
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
+                    info = ydl.extract_info(url, download=False)
+                break
+            except Exception as inner:
+                msg = str(inner)
+                # yt-dlp surfaces HTTP 429 errors in the exception string. If we hit a 429,
+                # back off for an increasing amount of time and retry.
+                if "HTTP Error 429" in msg and attempt < max_attempts - 1:
+                    sleep_s = min(300, (2 ** attempt) * 5) + random.uniform(0, 3)
+                    logger.warning(
+                        f"429 from TikTok while fetching posts for {username}. "
+                        f"Backing off {sleep_s:.1f}s (attempt {attempt + 1}/{max_attempts})"
+                    )
+                    time.sleep(sleep_s)
                     continue
-                    
-                caption = entry.get('description') or entry.get('title') or ""
+                # For non-429 errors or after exhausting retries, re-raise.
+                raise
 
-                entry_url = entry.get('url') or entry.get('webpage_url') or ""
+        if not info or 'entries' not in info:
+            logger.warning(f"No posts found for creator: {username}")
+            return []
 
-                # Quick win if we already see /photo/
-                kind = 'slideshow' if '/photo/' in entry_url else 'video'
+        entries = info['entries']  # type: ignore
+        for entry in entries:
+            if not entry:
+                continue
 
-                # PROBE to be sure (this is the important part for reliable detection)
-                if entry_url:
-                    kind = _probe_kind(entry_url, ydl_opts)
-                
-                post = Post(
-                    post_id=entry.get('id'),
-                    creator=username,
-                    kind=kind,
-                    url=entry_url,
-                    caption=caption,
-                    created_at=entry.get('timestamp')
-                )
-                posts.append(post)
-                
+            caption = entry.get('description') or entry.get('title') or ""
+            # Use either 'url' or 'webpage_url' from yt-dlp; if missing, default to empty string.
+            entry_url: str = entry.get('url') or entry.get('webpage_url') or ""
+
+            # Initial guess: if the URL already contains /photo/, mark as slideshow.
+            kind = 'slideshow' if '/photo/' in entry_url else 'video'
+
+            # Probe the URL to determine if it's truly a slideshow or video.
+            if entry_url:
+                kind = _probe_kind(entry_url, ydl_opts)
+
+            # When yt-dlp labels a post as slideshow but the URL is still using /video/, rewrite
+            # the URL to point at the /photo/ endpoint so downstream downloaders can fetch images.
+            if kind == 'slideshow':
+                post_id = entry.get('id')
+                if post_id:
+                    if '/photo/' not in entry_url:
+                        if '/video/' in entry_url:
+                            entry_url = entry_url.replace('/video/', '/photo/')
+                        else:
+                            entry_url = f"https://www.tiktok.com/@{username}/photo/{post_id}"
+
+            post = Post(
+                post_id=entry.get('id'),
+                creator=username,
+                kind=kind,
+                url=entry_url,
+                caption=caption,
+                created_at=entry.get('timestamp')
+            )
+            posts.append(post)
     except Exception as e:
         logger.error(f"Failed to fetch posts for {username}: {e}")
-        
     return posts
 
 def sort_posts_chronologically(posts: List[Post]) -> List[Post]:
