@@ -37,13 +37,15 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     logger.info(f"Processing creator: {username}")
     
     cookie_content = cookie_manager.get_cookie_content()
-    posts = fetch_posts(username, depth=fetch_depth, cookie_content=cookie_content)
+    cookie_path = cookie_manager.get_current_cookie_path()
+    posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content)
     
     if not posts and cookie_manager.cookie_files:
         logger.warning(f"No posts found for {username}, attempting cookie rotation...")
         cookie_manager.rotate()
         cookie_content = cookie_manager.get_cookie_content()
-        posts = fetch_posts(username, depth=fetch_depth, cookie_content=cookie_content)
+        cookie_path = cookie_manager.get_current_cookie_path()
+        posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content)
 
     sorted_posts = sort_posts_chronologically(posts)
     
