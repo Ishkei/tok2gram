@@ -55,7 +55,8 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.info(f"New post found: {post.post_id} ({post.kind})")
         
         # Download
-        media = download_post(post, "downloads", cookie_content=cookie_content)
+        cookie_path = cookie_manager.get_current_cookie_path()
+        media = download_post(post, "downloads", cookie_path=cookie_path, cookie_content=cookie_content)
         if not media:
             logger.error(f"Failed to download post {post.post_id}")
             continue

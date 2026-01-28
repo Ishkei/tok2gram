@@ -286,13 +286,10 @@ def download_video(
         },
     }
     
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    if cookie_path and os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    elif cookie_content:
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     try:
         # Cast ydl_opts to ``Dict[str, Any]`` to satisfy static type checkers.
@@ -338,7 +335,7 @@ def _is_gallery_dl_available() -> bool:
         return False
 
 
-def _download_slideshow_gallery_dl(post: Post, output_path: str) -> Optional[Dict[str, Any]]:
+def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Download TikTok slideshow images using gallery-dl.
     Returns dict with 'images' list and optional 'audio' path.
@@ -349,8 +346,12 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str) -> Optional[Dic
         "gallery-dl",
         "--directory", output_path,
         "--filename", "{num:>02}.{extension}",
-        post.url,
     ]
+
+    if cookie_path and os.path.exists(cookie_path):
+        command.extend(["--cookies", cookie_path])
+
+    command.append(post.url)
 
     logger.info(f"Running gallery-dl for slideshow {post.post_id}: {' '.join(command)}")
 
@@ -406,13 +407,10 @@ def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_pat
         }
     }
 
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    if cookie_path and os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    elif cookie_content:
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     try:
         info = None
@@ -539,7 +537,7 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
     # Try gallery-dl first (preferred for TikTok photo posts)
     if _is_gallery_dl_available():
         logger.info(f"Using gallery-dl for slideshow {post.post_id}")
-        result = _download_slideshow_gallery_dl(post, creator_path)
+        result = _download_slideshow_gallery_dl(post, creator_path, cookie_path=cookie_path, cookie_content=cookie_content)
         if result and result.get("images"):
             return result
         logger.warning(f"gallery-dl failed for {post.post_id}, falling back to yt-dlp/HTML method")
