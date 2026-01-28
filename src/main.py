@@ -52,20 +52,23 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.info(f"New post found: {post.post_id} ({post.kind})")
         
         # Download
-        file_paths = download_post(post, "../data/downloads", cookie_content=cookie_content)
-        if not file_paths:
+        media = download_post(post, "../data/downloads", cookie_content=cookie_content)
+        if not media:
             logger.error(f"Failed to download post {post.post_id}")
             continue
             
+        logger.info(f"Downloaded post {post.post_id}, determined kind={post.kind}, media keys={list(media.keys())}")
         state.record_download(post.post_id, post.creator, post.kind, post.url, post.created_at)
         
         # Upload
         try:
             message_id = None
-            if post.kind == 'video':
-                message_id = await uploader.upload_video(post, file_paths[0])
-            elif post.kind == 'slideshow':
-                message_id = await uploader.upload_slideshow(post, file_paths)
+            if post.kind == 'video' and 'video' in media:
+                message_id = await uploader.upload_video(post, media['video'])
+            elif post.kind == 'slideshow' and 'images' in media:
+                message_id = await uploader.upload_slideshow(post, media['images'])
+            else:
+                logger.error(f"Media format mismatch for {post.post_id}: kind={post.kind}, keys={list(media.keys())}")
             
             if message_id:
                 state.mark_as_uploaded(post.post_id, chat_id, message_id)
