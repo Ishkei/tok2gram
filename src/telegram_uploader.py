@@ -47,7 +47,15 @@ class TelegramUploader:
 
     def _format_caption(self, post: Post) -> str:
         caption = post.caption or ""
-        return f"{caption}\n\n— @{post.creator}"
+        attribution = f"\n\n— @{post.creator}"
+        max_length = 1024
+        
+        # If total length exceeds limit, truncate the caption part
+        if len(caption) + len(attribution) > max_length:
+            truncated_len = max_length - len(attribution) - 3  # -3 for "..."
+            caption = caption[:truncated_len] + "..."
+            
+        return f"{caption}{attribution}"
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def upload_video(self, post: Post, video_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:

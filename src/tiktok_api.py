@@ -60,7 +60,6 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     
     ydl_opts = {
         'extract_flat': True,
-        'playlist_items': f"1:{depth}",
         'quiet': True,
         'no_warnings': True,
         'http_headers': {
@@ -69,6 +68,9 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
+    
+    if depth and depth > 0:
+        ydl_opts['playlist_items'] = f"1:{depth}"
     
     actual_cookie = cookie_content
     if not actual_cookie and cookie_path and os.path.exists(cookie_path):

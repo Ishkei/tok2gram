@@ -2,7 +2,7 @@ telegram:
   bot_token: "YOUR_BOT_TOKEN_HERE"
 
 settings:
-  fetch_depth: 10
+  fetch_depth: 0 # 0 means unlimited
   download_workers: 3
   yt_concurrent_fragments: 2
   retry_uploads: 1

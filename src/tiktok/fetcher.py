@@ -19,19 +19,25 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     """
     Fetch latest posts for a TikTok user using yt-dlp metadata extraction.
     """
-    url = f"https://www.tiktok.com/@{username}"
+    # If username is numeric or explicitly prefixed, use it directly as a TikTok user ID
+    if username.startswith("tiktokuser:") or username.isdigit():
+        url = username if username.startswith("tiktokuser:") else f"tiktokuser:{username}"
+    else:
+        url = f"https://www.tiktok.com/@{username}"
     
     ydl_opts = {
         'extract_flat': True,
-        'playlist_items': f"1:{depth}",
         'quiet': True,
         'no_warnings': True,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xhtml+xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
+
+    if depth and depth > 0:
+        ydl_opts['playlist_items'] = f"1:{depth}"
     
     actual_cookie = cookie_content
     if not actual_cookie and cookie_path and os.path.exists(cookie_path):
@@ -58,12 +64,11 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                 caption = entry.get('description') or entry.get('title') or ""
                 
                 # Prioritize video over slideshow for mixed media
-                # yt-dlp flat-extract often marks slideshows as 'playlist' in _type or type
+                # yt-dlp flat-extract often marks slideshows as 'playlist' or 'photo'
                 kind = 'video'
-                if entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow':
-                    # Only mark as slideshow if it's NOT explicitly marked as a video elsewhere
-                    if entry.get('_type') != 'video':
-                        kind = 'slideshow'
+                url_str = entry.get('url') or entry.get('webpage_url') or ""
+                if entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow' or '/photo/' in url_str:
+                    kind = 'slideshow'
                 
                 post = Post(
                     post_id=entry.get('id'),
