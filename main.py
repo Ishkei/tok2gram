@@ -64,18 +64,18 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         
         # Upload
         try:
+            logger.debug(f"DEBUG: media type = {type(media)}, value = {media}")
             message_id = None
             if post.kind == 'video':
-                message_id = await uploader.upload_video(post, media["video"], chat_id=chat_id)
+                # For video, media should be a list with one video path
+                video_path = media[0] if media and isinstance(media, list) and len(media) > 0 else None
+                if video_path:
+                    message_id = await uploader.upload_video(post, video_path, chat_id=chat_id)
             elif post.kind == 'slideshow':
-                image_paths = media.get("images") or []
-                audio_path = media.get("audio")
+                # For slideshow, media is a list of image paths
+                image_paths = media if media and isinstance(media, list) else []
                 if image_paths:
                     message_id = await uploader.upload_slideshow(post, image_paths, chat_id=chat_id)
-                if audio_path:
-                    # Telegram doesn't allow mixing audio + album in a single message.
-                    # Upload audio after the album.
-                    await uploader.upload_audio(post, audio_path, chat_id=chat_id)
             
             if message_id:
                 state.mark_as_uploaded(post.post_id, chat_id, message_id)
