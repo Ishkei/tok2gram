@@ -2,7 +2,7 @@ import logging
 import asyncio
 import subprocess
 from typing import List, Optional
-from telegram import Bot, InputMediaPhoto
+from telegram import Bot, InputMediaPhoto, InputFile
 from telegram.constants import ParseMode
 from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -158,15 +158,18 @@ class TelegramUploader:
             chunk_paths = image_paths[start_idx:end_idx]
             
             logger.info(f"Uploading chunk {chunk_idx + 1}/{num_chunks} with {len(chunk_paths)} images")
-            
+
             # Build media group for this chunk
             # Only add caption to the first image of the first chunk
             media = []
+            open_files = []
             for i, path in enumerate(chunk_paths):
+                f = open(path, 'rb')
+                open_files.append(f)  # Keep reference to prevent GC
                 if chunk_idx == 0 and i == 0:
-                    media.append(InputMediaPhoto(media=path, caption=caption))
+                    media.append(InputMediaPhoto(media=InputFile(f, filename=path), caption=caption))
                 else:
-                    media.append(InputMediaPhoto(media=path))
+                    media.append(InputMediaPhoto(media=InputFile(f, filename=path)))
             
             try:
                 messages = await Bot.send_media_group(
@@ -190,6 +193,10 @@ class TelegramUploader:
             except Exception as e:
                 logger.error(f"Failed to upload chunk {chunk_idx + 1}/{num_chunks} for post {post.post_id}: {e}")
                 raise
+            finally:
+                # Close all file handles after upload completes
+                for f in open_files:
+                    f.close()
             
             # Add delay between chunks to reduce flood risk (except after the last chunk)
             if chunk_idx < num_chunks - 1:
