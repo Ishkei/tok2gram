@@ -132,7 +132,7 @@ def _transcode_to_telegram_mp4(input_path: str) -> str:
         subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     except Exception:
         logger.warning("ffmpeg not found; skipping Telegram-compatibility transcode")
-        return input_path
+        return os.path.abspath(input_path)
 
     # Keep output alongside input.
     out_path = src.with_suffix(".mp4")
@@ -176,7 +176,7 @@ def _transcode_to_telegram_mp4(input_path: str) -> str:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
                 pass
-            return input_path
+            return os.path.abspath(input_path)
 
         # Replace/rename output atomically
         try:
@@ -186,7 +186,7 @@ def _transcode_to_telegram_mp4(input_path: str) -> str:
             out_path = tmp_path
 
         logger.info("Transcoded for Telegram Desktop preview: %s -> %s", src, out_path)
-        return str(out_path)
+        return os.path.abspath(str(out_path))
     finally:
         # Cleanup temp if it still exists and wasn't moved
         try:
@@ -227,6 +227,8 @@ def download_post(post: Post, base_download_path: str, cookie_path: Optional[str
             if 'video' in result and 'images' not in result:
                 logger.info(f"Slideshow downloader returned a video for {post.post_id}; updating kind to video")
                 post.kind = 'video'
+                # Ensure the video is in a Telegram-friendly format
+                result['video'] = _transcode_to_telegram_mp4(result['video'])
             return result
         # Slideshow extraction failed; attempt to treat as a video. Reconstruct
         # the video URL by replacing /photo/ with /video/ if present. If not
@@ -317,8 +319,7 @@ def download_video(
                 logger.info(f"Successfully downloaded video: {filename}")
                 # Enforce Telegram Desktop-friendly MP4 (H.264/AAC + faststart)
                 out_path = _transcode_to_telegram_mp4(filename)
-                # Return absolute path to ensure it can be located by upload code.
-                return os.path.abspath(out_path)
+                return out_path
             else:
                 logger.error(f"Download finished but file not found: {filename}")
                 return None
