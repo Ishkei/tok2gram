@@ -6,6 +6,41 @@ from typing import List, Optional
 
 logger = logging.getLogger("tok2gram.tiktok")
 
+def _probe_kind(url: str, ydl_base_opts: dict) -> str:
+    """
+    Probe a TikTok post URL to determine if it's a slideshow or video.
+    Uses yt-dlp to extract metadata and check for slideshow indicators.
+    """
+    probe_opts = dict(ydl_base_opts)
+    probe_opts.pop("extract_flat", None)
+    probe_opts.pop("playlist_items", None)
+    probe_opts["quiet"] = True
+    probe_opts["no_warnings"] = True
+
+    try:
+        with yt_dlp.YoutubeDL(probe_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        # Strong signal: playlist / entries => slideshow-like
+        entries = info.get("entries")
+        if info.get("_type") == "playlist" and entries:
+            return "slideshow"
+
+        # Another strong signal: TikTok photo posts often expose MANY thumbnails/images
+        thumbs = info.get("thumbnails") or []
+        if isinstance(thumbs, list) and len(thumbs) >= 2:
+            return "slideshow"
+
+        # If formats exist but all are audio-only, it's very likely a slideshow
+        fmts = info.get("formats") or []
+        if fmts and all((f.get("vcodec") == "none") for f in fmts if isinstance(f, dict)):
+            return "slideshow"
+
+    except Exception as e:
+        logger.debug(f"Probe failed for {url}: {e}")
+
+    return "video"
+
 @dataclass
 class Post:
     post_id: str
@@ -56,18 +91,15 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                     continue
                     
                 caption = entry.get('description') or entry.get('title') or ""
-                
+
                 entry_url = entry.get('url') or entry.get('webpage_url') or ""
 
-                # Photo posts on TikTok use `/photo/<id>` URLs. These must be treated as
-                # slideshows (image carousels), not videos.
+                # Quick win if we already see /photo/
                 kind = 'slideshow' if '/photo/' in entry_url else 'video'
 
-                # yt-dlp flat-extract sometimes marks slideshows as 'playlist' in _type or type
-                if kind != 'slideshow' and (entry.get('_type') == 'playlist' or entry.get('type') == 'slideshow'):
-                    # Only mark as slideshow if it's NOT explicitly marked as a video elsewhere
-                    if entry.get('_type') != 'video':
-                        kind = 'slideshow'
+                # PROBE to be sure (this is the important part for reliable detection)
+                if entry_url:
+                    kind = _probe_kind(entry_url, ydl_opts)
                 
                 post = Post(
                     post_id=entry.get('id'),

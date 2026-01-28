@@ -14,15 +14,17 @@ so that new content can be identified.
 2. When fetching posts using yt-dlp metadata extraction
 3. Then retrieve up to 10 latest posts
 4. And normalize each to Post model with post_id, creator, kind, url, caption, created_at
+5. And reliably detect slideshow posts using content probing (not just URL patterns)
 
 ## Tasks / Subtasks
 
 - [x] Implement yt-dlp metadata extraction for TikTok profile (AC: 1,2,3)
   - [x] Configure yt-dlp to fetch JSON metadata only
   - [x] Limit to latest 10 posts
-- [x] Parse metadata and extract post information (AC: 3,4)
+- [x] Parse metadata and extract post information (AC: 3,4,5)
   - [x] Extract post_id, creator, kind, url, caption, created_at
   - [x] Handle missing timestamps gracefully
+  - [x] Implement probe-based kind detection for reliable slideshow identification
 - [x] Create Post model instances (AC: 4)
 
 ## Dev Notes
@@ -31,6 +33,11 @@ so that new content can be identified.
 - Prefer metadata extraction over HTML parsing for reliability
 - Post model: post_id (str), creator (str), kind ('video' or 'slideshow'), url (str), caption (str), created_at (datetime or None)
 - Handle rate limiting and anti-bot measures
+- Implement _probe_kind helper function to probe each post URL for accurate kind detection:
+  - Check for playlist _type with entries
+  - Check for >=2 thumbnails
+  - Check for all formats being audio-only (vcodec == 'none')
+  - Return 'slideshow' if any condition met, else 'video'
 
 ### Project Structure Notes
 
