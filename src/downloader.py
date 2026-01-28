@@ -360,7 +360,12 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Op
             pass
 
     if actual_cookie:
-        command.extend(["--header", f"Cookie: {actual_cookie}"])
+        # gallery-dl 1.31.4 uses -o http-headers=... or -C for Netscape cookies.
+        # Since our cookies are raw strings, we use the header option.
+        command.extend(["-o", f"http-headers=Cookie: {actual_cookie}"])
+    
+    # Always set User-Agent for better reliability
+    command.extend(["-a", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"])
 
     command.append(post.url)
 
