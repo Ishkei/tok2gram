@@ -63,11 +63,27 @@ class Post:
     caption: str
     created_at: Optional[int]  # unix epoch
 
-def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> List[Post]:
+def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None, user_id: Optional[str] = None) -> List[Post]:
     """
     Fetch latest posts for a TikTok user using yt-dlp metadata extraction.
+    
+    Args:
+        username: The TikTok username
+        depth: Number of posts to fetch
+        cookie_path: Path to cookie file
+        cookie_content: Cookie content string
+        user_id: Optional TikTok user ID (numeric). If provided, will be used instead of username
+                 for fetching posts, which helps with accounts that have privacy settings
+                 preventing username-based lookups.
     """
-    url = f"https://www.tiktok.com/@{username}"
+    # If user_id is provided, use tiktokuser: prefix format
+    if user_id:
+        url = f"tiktokuser:{user_id}"
+    # If username is already in tiktokuser: format or is numeric, use it directly
+    elif username.startswith("tiktokuser:") or username.isdigit():
+        url = username if username.startswith("tiktokuser:") else f"tiktokuser:{username}"
+    else:
+        url = f"https://www.tiktok.com/@{username}"
     
     ydl_opts = {
         'extract_flat': True,
@@ -121,7 +137,9 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
             logger.warning(f"No posts found for creator: {username}")
             return []
 
-        entries = info['entries']  # type: ignore
+        entries = info.get('entries') or []
+        if not isinstance(entries, list):
+            entries = []
         for entry in entries:
             if not entry:
                 continue
