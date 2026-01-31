@@ -129,6 +129,7 @@ Thumbs.db
 # Project-specific
 logs/
 downloads/
-cookies/
 config.yaml
 config/config.yaml
+cookies/sid_tt_1.txt
+data/cookies/tiktok.txt

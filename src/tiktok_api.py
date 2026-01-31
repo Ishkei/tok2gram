@@ -8,7 +8,7 @@ from typing import List, Optional
 
 logger = logging.getLogger("tok2gram.tiktok")
 
-def _probe_kind(url: str, ydl_base_opts: dict, cookie_manager=None, cookie_path: str = None) -> str:
+def _probe_kind(url: str, ydl_base_opts: dict, cookie_manager=None, cookie_path: Optional[str] = None) -> str:
     """
     Probe a TikTok post URL to determine if it's a slideshow or video.
     Uses yt-dlp to extract metadata and check for slideshow indicators.
@@ -28,17 +28,6 @@ def _probe_kind(url: str, ydl_base_opts: dict, cookie_manager=None, cookie_path:
         if current_cookie_path and os.path.exists(current_cookie_path):
             probe_opts['cookiefile'] = current_cookie_path
         
-        # Add better browser headers
-        if 'http_headers' not in probe_opts:
-            probe_opts['http_headers'] = {}
-        probe_opts['http_headers'].update({
-            'Referer': 'https://www.tiktok.com/',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-        })
-
         try:
             with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore
                 info = ydl.extract_info(url, download=False)
@@ -132,16 +121,6 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
         'extract_flat': True,
         'quiet': True,
         'no_warnings': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.tiktok.com/',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-        }
     }
     
     if depth and depth > 0:
@@ -178,6 +157,10 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                     )
                     time.sleep(sleep_s)
                     continue
+                # Handle IP blocking errors - raise immediately to trigger creator skip
+                if "IP address is blocked" in msg or "HTTP Error 403" in msg or "403" in msg:
+                    logger.error(f"IP blocked while fetching posts for {username}: {msg}")
+                    raise
                 # For non-429 errors or after exhausting retries, re-raise.
                 raise
 
