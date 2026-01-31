@@ -98,24 +98,87 @@ class TelegramUploader:
         
         return read_timeout, write_timeout, connect_timeout, pool_timeout
 
-    def _get_chunk_size(self, file_path: str) -> int:
+    def _get_duration(self, file_path: str) -> Optional[float]:
+        """Get video duration in seconds using ffprobe."""
+        try:
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                file_path
+            ]
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                return float(result.stdout.strip())
+        except Exception as e:
+            logger.warning(f"Failed to get duration for {file_path}: {e}")
+        return None
+
+    def _compress_video(self, input_path: str, target_size_mb: float = 49.0) -> str:
         """
-        Get appropriate chunk size for large file uploads.
-        
-        Args:
-            file_path: Path to the file to upload
+        Compress video to target size using 2-pass encoding.
+        Returns path to compressed video (or original if compression fails/unnecessary).
+        """
+        try:
+            duration = self._get_duration(input_path)
+            if not duration:
+                logger.warning("Could not determine duration, skipping compression")
+                return input_path
+
+            # Calculate target bitrate
+            # target_size_bits = target_size_mb * 8 * 1024 * 1024
+            # target_bitrate = target_size_bits / duration
+            # Use a slightly lower bitrate to be safe (audio is separate)
+            audio_bitrate_k = 128
+            target_total_bitrate_k = (target_size_mb * 8 * 1024) / duration
+            target_video_bitrate_k = max(100, target_total_bitrate_k - audio_bitrate_k)
+
+            logger.info(f"Compressing {input_path} to < {target_size_mb}MB (duration: {duration}s, target video bitrate: {target_video_bitrate_k:.0f}k)")
+
+            # Create temp output path
+            directory = os.path.dirname(input_path) or "."
+            filename = os.path.basename(input_path)
+            base, ext = os.path.splitext(filename)
+            output_path = os.path.join(directory, f"{base}_compressed{ext}")
+
+            # 2-pass encoding for better quality at specific size
+            # Pass 1
+            pass1_cmd = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k", "-pass", "1",
+                "-f", "mp4", "/dev/null"
+            ]
+            subprocess.run(pass1_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=directory)
+
+            # Pass 2
+            pass2_cmd = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k", "-pass", "2",
+                "-c:a", "aac", "-b:a", f"{audio_bitrate_k}k",
+                "-movflags", "+faststart",
+                output_path
+            ]
+            subprocess.run(pass2_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=directory)
+
+            # Cleanup pass log files
+            for f in os.listdir(directory):
+                if f.startswith("ffmpeg2pass"):
+                    try:
+                        os.remove(os.path.join(directory, f))
+                    except:
+                        pass
             
-        Returns:
-            Chunk size in bytes (0 for no chunking)
-        """
-        file_size = os.path.getsize(file_path)
-        file_size_mb = file_size / (1024 * 1024)
-        
-        # Use chunking for files > 20MB
-        if file_size_mb > 20:
-            # Use 10MB chunks for large files
-            return 10 * 1024 * 1024  # 10MB
-        return 0  # No chunking for smaller files
+            if os.path.exists(output_path):
+                new_size = os.path.getsize(output_path) / (1024 * 1024)
+                logger.info(f"Compression complete: {new_size:.2f}MB")
+                return output_path
+            
+            return input_path
+
+        except Exception as e:
+            logger.error(f"Compression failed: {e}")
+            return input_path
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def upload_video(self, post: Post, video_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
@@ -126,22 +189,37 @@ class TelegramUploader:
         target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
         
+        # Check file size (50MB limit for standard bots)
+        file_size = os.path.getsize(video_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        final_video_path = video_path
+        
+        if file_size_mb >= 50:
+            if os.getenv("TELEGRAM_LOCAL_API"):
+                logger.info(f"File size {file_size_mb:.2f}MB > 50MB, but TELEGRAM_LOCAL_API is set. Proceeding.")
+            else:
+                logger.warning(f"File size {file_size_mb:.2f}MB > 50MB and standard API in use. Compressing...")
+                final_video_path = self._compress_video(video_path)
+                # Recalculate size for logging/timeouts
+                file_size = os.path.getsize(final_video_path)
+                file_size_mb = file_size / (1024 * 1024)
+
         # Get dynamic timeouts based on file size
-        read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(video_path)
-        chunk_size = self._get_chunk_size(video_path)
+        read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(final_video_path)
         
         logger.info(f"Uploading video for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
 
         # Some downloads can be audio-only (e.g. .m4a). If we try to send those as
         # a video, Telegram Desktop can show "Video.Unsupported.Desktop".
         # In that case, fall back to sending as audio so it plays everywhere.
-        if not _has_video_stream(video_path):
+        if not _has_video_stream(final_video_path):
             logger.warning(
                 "File has no video stream; sending as audio instead: %s",
-                video_path,
+                final_video_path,
             )
             try:
-                with open(video_path, 'rb') as audio:
+                with open(final_video_path, 'rb') as audio:
                     message = await Bot.send_audio(
                         self.bot,
                         chat_id=target_chat,
@@ -160,7 +238,7 @@ class TelegramUploader:
                 raise
         
         try:
-            with open(video_path, 'rb') as video:
+            with open(final_video_path, 'rb') as video:
                 # Prepare send_video kwargs
                 send_kwargs = {
                     'chat_id': target_chat,
@@ -173,11 +251,6 @@ class TelegramUploader:
                     'connect_timeout': connect_timeout,
                     'pool_timeout': pool_timeout,
                 }
-                
-                # Add chunk_size for large files if supported
-                if chunk_size > 0:
-                    logger.info(f"Using chunked upload with chunk_size={chunk_size} bytes")
-                    send_kwargs['chunk_size'] = chunk_size
                 
                 message = await Bot.send_video(
                     self.bot,
@@ -197,7 +270,6 @@ class TelegramUploader:
         
         # Get dynamic timeouts based on file size
         read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(audio_path)
-        chunk_size = self._get_chunk_size(audio_path)
         
         logger.info(f"Uploading audio for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
 
@@ -214,11 +286,6 @@ class TelegramUploader:
                     'connect_timeout': connect_timeout,
                     'pool_timeout': pool_timeout,
                 }
-                
-                # Add chunk_size for large files if supported
-                if chunk_size > 0:
-                    logger.info(f"Using chunked upload with chunk_size={chunk_size} bytes")
-                    send_kwargs['chunk_size'] = chunk_size
                 
                 message = await Bot.send_audio(
                     self.bot,
