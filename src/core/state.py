@@ -1,13 +1,17 @@
 import sqlite3
 import logging
 import os
-from typing import Optional
+import time
+from typing import Optional, Dict
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("tok2gram.state")
 
 class StateStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        # In-memory tracking for IP-blocked creators (not persisted to DB)
+        self.ip_blocked_creators: Dict[str, datetime] = {}
         self._init_db()
 
     def _init_db(self):
@@ -33,6 +37,31 @@ class StateStore:
             logger.error(f"Failed to initialize database: {e}")
             raise
 
+    def mark_ip_blocked(self, username: str):
+        """Mark a creator as IP-blocked with timestamp."""
+        self.ip_blocked_creators[username] = datetime.now()
+        logger.warning(f"Creator {username} marked as IP-blocked (cooldown: 1 hour)")
+
+    def is_ip_blocked(self, username: str) -> bool:
+        """Check if creator is currently IP-blocked (cooldown period)."""
+        if username not in self.ip_blocked_creators:
+            return False
+        blocked_time = self.ip_blocked_creators[username]
+        # 1 hour cooldown for IP-blocked creators
+        cooldown = timedelta(hours=1)
+        is_blocked = datetime.now() - blocked_time < cooldown
+        if not is_blocked:
+            # Clear expired block
+            del self.ip_blocked_creators[username]
+            logger.info(f"IP block for {username} has expired")
+        return is_blocked
+
+    def clear_ip_block(self, username: str):
+        """Clear IP block status for a creator."""
+        if username in self.ip_blocked_creators:
+            del self.ip_blocked_creators[username]
+            logger.info(f"IP block cleared for {username}")
+
     def is_processed(self, post_id: str) -> bool:
         """
         Check if a post has been successfully uploaded.
@@ -52,7 +81,6 @@ class StateStore:
 
     def record_download(self, post_id: str, creator: str, kind: str, url: str, created_at: Optional[int]):
         """Record that a post has been downloaded (but not yet uploaded)."""
-        import time
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
@@ -67,7 +95,6 @@ class StateStore:
 
     def mark_as_uploaded(self, post_id: str, chat_id: str, message_id: int):
         """Mark a post as successfully uploaded to Telegram."""
-        import time
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""

@@ -11,10 +11,20 @@ except ImportError:
     pass
 from src.config_loader import load_config, load_creators
 from src.tiktok_api import fetch_posts, sort_posts_chronologically
-from src.downloader import download_post
+from src.downloader import download_post, PostInaccessibleError
 from src.core.state import StateStore
 from src.telegram_uploader import TelegramUploader
 from src.cookie_manager import CookieManager
+
+
+def get_retry_delay(attempt: int, is_ip_blocked: bool = False) -> float:
+    """Calculate retry delay with exponential backoff."""
+    base_delay = 5.0
+    if is_ip_blocked:
+        # Longer delays for IP-blocked scenarios
+        return min(300, base_delay * (2 ** attempt))  # Max 5 minutes
+    else:
+        return min(60, base_delay * (2 ** attempt))  # Max 60 seconds
 
 # Bot metadata (hardcoded for startup banner)
 BOT_NAME = "Tok2Gram"
@@ -61,6 +71,8 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     sorted_posts = sort_posts_chronologically(posts)
     
     new_posts_count = 0
+    ip_blocked_detected = False
+    
     for post in sorted_posts:
         if state.is_processed(post.post_id):
             continue
@@ -68,11 +80,26 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.info(f"New post found: {post.post_id} ({post.kind})")
         
         # Download
-        cookie_path = cookie_manager.get_current_cookie_path()
-        media = download_post(post, "downloads", cookie_path=cookie_path, cookie_content=cookie_content)
-        if not media:
-            logger.error(f"Failed to download post {post.post_id}")
+        try:
+            cookie_path = cookie_manager.get_current_cookie_path()
+            media = download_post(post, "downloads", cookie_path=cookie_path, cookie_content=cookie_content)
+            if not media:
+                logger.error(f"Failed to download post {post.post_id}")
+                continue
+        except PostInaccessibleError as e:
+            logger.warning(f"Post {post.post_id} is inaccessible, skipping: {e}")
             continue
+        except Exception as e:
+            error_str = str(e)
+            if "IP address is blocked" in error_str or "HTTP Error 403" in error_str or "403" in error_str:
+                logger.error(f"IP blocked for post {post.post_id}, skipping creator {username}")
+                # Mark creator for longer cooldown
+                state.mark_ip_blocked(username)
+                ip_blocked_detected = True
+                break  # Stop processing this creator
+            else:
+                logger.error(f"Failed to download post {post.post_id}: {e}")
+                continue
             
         state.record_download(post.post_id, post.creator, post.kind, post.url, post.created_at)
         
@@ -96,6 +123,9 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         except Exception as e:
             logger.error(f"Failed to process upload for post {post.post_id}: {e}")
 
+    if ip_blocked_detected:
+        logger.warning(f"Creator {username} marked as IP-blocked. Will retry after cooldown period.")
+    
     logger.info(f"Finished processing {username}. {new_posts_count} new posts uploaded.")
 
 async def main():
@@ -119,13 +149,25 @@ async def main():
         cookie_manager = CookieManager("cookies")
         
         for creator in creators:
+            username = creator['username']
+            
+            # Skip creators that are currently IP-blocked
+            if state.is_ip_blocked(username):
+                logger.info(f"Skipping {username} - IP blocked (cooldown)")
+                continue
+            
             await process_creator(creator, settings, state, uploader, cookie_manager)
             
             # Delay between creators to avoid TikTok blocks
-            min_delay = settings.get('delay_between_creators_seconds_min', 30)
-            max_delay = settings.get('delay_between_creators_seconds_max', 60)
-            delay = random.uniform(min_delay, max_delay)
-            logger.info(f"Waiting {delay:.1f}s before next creator...")
+            # Use longer delay if the previous creator was IP-blocked
+            if state.is_ip_blocked(username):
+                delay = get_retry_delay(1, is_ip_blocked=True)
+                logger.info(f"IP block detected for {username}, waiting {delay:.1f}s before next creator...")
+            else:
+                min_delay = settings.get('delay_between_creators_seconds_min', 30)
+                max_delay = settings.get('delay_between_creators_seconds_max', 60)
+                delay = random.uniform(min_delay, max_delay)
+                logger.info(f"Waiting {delay:.1f}s before next creator...")
             await asyncio.sleep(delay)
             
     except Exception as e:

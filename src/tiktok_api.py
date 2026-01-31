@@ -8,49 +8,92 @@ from typing import List, Optional
 
 logger = logging.getLogger("tok2gram.tiktok")
 
-def _probe_kind(url: str, ydl_base_opts: dict) -> str:
+def _probe_kind(url: str, ydl_base_opts: dict, cookie_manager=None, cookie_path: str = None) -> str:
     """
     Probe a TikTok post URL to determine if it's a slideshow or video.
     Uses yt-dlp to extract metadata and check for slideshow indicators.
+    Includes retry logic with exponential backoff for rate limits and cookie rotation.
     """
-    probe_opts = dict(ydl_base_opts)
-    probe_opts.pop("extract_flat", None)
-    probe_opts.pop("playlist_items", None)
-    probe_opts["quiet"] = True
-    probe_opts["no_warnings"] = True
+    max_attempts = 3
+    current_cookie_path = cookie_path
+    
+    for attempt in range(max_attempts):
+        probe_opts = dict(ydl_base_opts)
+        probe_opts.pop("extract_flat", None)
+        probe_opts.pop("playlist_items", None)
+        probe_opts["quiet"] = True
+        probe_opts["no_warnings"] = True
+        
+        # Use cookiefile option for Netscape format cookies
+        if current_cookie_path and os.path.exists(current_cookie_path):
+            probe_opts['cookiefile'] = current_cookie_path
+        
+        # Add better browser headers
+        if 'http_headers' not in probe_opts:
+            probe_opts['http_headers'] = {}
+        probe_opts['http_headers'].update({
+            'Referer': 'https://www.tiktok.com/',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+        })
 
-    try:
-        with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore
-            info = ydl.extract_info(url, download=False)
+        try:
+            with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore
+                info = ydl.extract_info(url, download=False)
 
-        # If formats exist and contain any video stream, it's definitely a video.
-        # This helps correctly classify posts that were redirected from /photo/ to /video/.
-        fmts = info.get("formats") or []
-        if any((f.get("vcodec") != "none") for f in fmts if isinstance(f, dict)):
-            return "video"
+            # If formats exist and contain any video stream, it's definitely a video.
+            # This helps correctly classify posts that were redirected from /photo/ to /video/.
+            fmts = info.get("formats") or []
+            if any((f.get("vcodec") != "none") for f in fmts if isinstance(f, dict)):
+                return "video"
 
-        # Strong signal for slideshow: yt-dlp identifies it as a playlist or has entries.
-        entries = info.get("entries")
-        if info.get("_type") == "playlist" or entries:
-            return "slideshow"
+            # Strong signal for slideshow: yt-dlp identifies it as a playlist or has entries.
+            entries = info.get("entries")
+            if info.get("_type") == "playlist" or entries:
+                return "slideshow"
 
-        # If formats exist but all are audio-only, it's very likely a slideshow.
-        if fmts and all((f.get("vcodec") == "none") for f in fmts if isinstance(f, dict)):
-            return "slideshow"
+            # If formats exist but all are audio-only, it's very likely a slideshow.
+            if fmts and all((f.get("vcodec") == "none") for f in fmts if isinstance(f, dict)):
+                return "slideshow"
 
-        # If the URL explicitly contains /photo/, trust it as a fallback.
-        if "/photo/" in url:
-            return "slideshow"
+            # If the URL explicitly contains /photo/, trust it as a fallback.
+            if "/photo/" in url:
+                return "slideshow"
 
-    except Exception as e:
-        logger.warning(f"Probe failed for {url}: {e}")
-        # On failure, fall back to URL-based guess.
-        if "/photo/" in url:
-            return "slideshow"
-        # If probe fails for a /video/ URL (e.g., "No video formats found"), consider it a slideshow fallback
-        if "/video/" in url:
-            logger.warning(f"Video probe failed for {url}; treating as slideshow fallback")
-            return "slideshow"
+        except Exception as e:
+            error_str = str(e)
+            logger.warning(f"Probe failed for {url} (attempt {attempt + 1}/{max_attempts}): {e}")
+            
+            # Handle rate limiting with exponential backoff
+            if "HTTP Error 429" in error_str and attempt < max_attempts - 1:
+                wait_time = 2 ** attempt * 5  # 5, 10, 20 seconds
+                logger.warning(f"Rate limited, waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+                continue
+            
+            # Handle "No video formats found" with cookie rotation
+            elif "No video formats found" in error_str and cookie_manager and attempt < max_attempts - 1:
+                logger.warning(f"No formats found, rotating cookies...")
+                new_cookie_path = cookie_manager.rotate()
+                if new_cookie_path and new_cookie_path != current_cookie_path:
+                    current_cookie_path = new_cookie_path
+                    continue
+                else:
+                    logger.warning("No more cookies to rotate, falling back to URL-based detection")
+            
+            # On failure, fall back to URL-based guess.
+            if "/photo/" in url:
+                return "slideshow"
+            # If probe fails for a /video/ URL (e.g., "No video formats found"), consider it a slideshow fallback
+            if "/video/" in url:
+                logger.warning(f"Video probe failed for {url}; treating as slideshow fallback")
+                return "slideshow"
+            
+            # If we've exhausted retries or it's not a retryable error, re-raise
+            if attempt == max_attempts - 1:
+                raise
 
     return "video"
 
@@ -93,19 +136,24 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.tiktok.com/',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
         }
     }
     
     if depth and depth > 0:
         ydl_opts['playlist_items'] = f"1:{depth}"
     
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    # Use cookiefile option for Netscape format cookies instead of raw cookie header
+    actual_cookie_path = cookie_path
+    if actual_cookie_path and os.path.exists(actual_cookie_path):
+        ydl_opts['cookiefile'] = actual_cookie_path
+    elif cookie_content:
+        # Fallback: if cookie content is provided directly, use it in headers
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     posts = []
     
@@ -153,7 +201,7 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
 
             # Probe the URL to determine if it's truly a slideshow or video.
             if entry_url:
-                kind = _probe_kind(entry_url, ydl_opts)
+                kind = _probe_kind(entry_url, ydl_opts, cookie_manager=None, cookie_path=actual_cookie_path)
 
             # When yt-dlp labels a post as slideshow but the URL is still using /video/, rewrite
             # the URL to point at the /photo/ endpoint so downstream downloaders can fetch images.

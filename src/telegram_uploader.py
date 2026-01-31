@@ -57,6 +57,66 @@ class TelegramUploader:
             
         return f"{caption}{attribution}"
 
+    def _get_dynamic_timeouts(self, file_path: str):
+        """
+        Calculate dynamic timeouts based on file size.
+        
+        Args:
+            file_path: Path to the file to upload
+            
+        Returns:
+            Tuple of (read_timeout, write_timeout, connect_timeout, pool_timeout)
+        """
+        file_size = os.path.getsize(file_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        # Estimate upload time at 5 Mbps (typical connection)
+        # Time = size / speed, then add buffer
+        estimated_time_seconds = (file_size * 8) / (5 * 1024 * 1024)  # 5 Mbps = 5,242,880 bps
+        
+        if file_size_mb < 20:
+            # Small files: keep default timeouts
+            read_timeout = 60
+            write_timeout = 60
+        elif file_size_mb < 50:
+            # Medium files (20-50MB): moderate increase
+            write_timeout = max(120, int(estimated_time_seconds * 1.5) + 60)
+            read_timeout = max(60, int(estimated_time_seconds * 0.5) + 30)
+        else:
+            # Large files (>50MB): significant increase
+            write_timeout = max(180, int(estimated_time_seconds * 1.5) + 120)
+            read_timeout = max(90, int(estimated_time_seconds * 0.5) + 60)
+        
+        connect_timeout = max(30, int(estimated_time_seconds * 0.2) + 10)
+        pool_timeout = max(60, int(estimated_time_seconds * 0.3) + 30)
+        
+        logger.info(
+            f"File size: {file_size_mb:.2f}MB, "
+            f"estimated upload time: ~{estimated_time_seconds:.0f}s, "
+            f"timeouts: read={read_timeout}s, write={write_timeout}s, connect={connect_timeout}s, pool={pool_timeout}s"
+        )
+        
+        return read_timeout, write_timeout, connect_timeout, pool_timeout
+
+    def _get_chunk_size(self, file_path: str) -> int:
+        """
+        Get appropriate chunk size for large file uploads.
+        
+        Args:
+            file_path: Path to the file to upload
+            
+        Returns:
+            Chunk size in bytes (0 for no chunking)
+        """
+        file_size = os.path.getsize(file_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        # Use chunking for files > 20MB
+        if file_size_mb > 20:
+            # Use 10MB chunks for large files
+            return 10 * 1024 * 1024  # 10MB
+        return 0  # No chunking for smaller files
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def upload_video(self, post: Post, video_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
         """
@@ -65,6 +125,11 @@ class TelegramUploader:
         """
         target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
+        
+        # Get dynamic timeouts based on file size
+        read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(video_path)
+        chunk_size = self._get_chunk_size(video_path)
+        
         logger.info(f"Uploading video for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
 
         # Some downloads can be audio-only (e.g. .m4a). If we try to send those as
@@ -83,10 +148,10 @@ class TelegramUploader:
                         audio=audio,
                         caption=caption,
                         message_thread_id=message_thread_id,
-                        read_timeout=60,
-                        write_timeout=60,
-                        connect_timeout=60,
-                        pool_timeout=60,
+                        read_timeout=read_timeout,
+                        write_timeout=write_timeout,
+                        connect_timeout=connect_timeout,
+                        pool_timeout=pool_timeout,
                     )
                     logger.info(f"Successfully uploaded audio: {message.message_id}")
                     return message.message_id
@@ -96,17 +161,27 @@ class TelegramUploader:
         
         try:
             with open(video_path, 'rb') as video:
+                # Prepare send_video kwargs
+                send_kwargs = {
+                    'chat_id': target_chat,
+                    'video': video,
+                    'caption': caption,
+                    'message_thread_id': message_thread_id,
+                    'supports_streaming': True,
+                    'read_timeout': read_timeout,
+                    'write_timeout': write_timeout,
+                    'connect_timeout': connect_timeout,
+                    'pool_timeout': pool_timeout,
+                }
+                
+                # Add chunk_size for large files if supported
+                if chunk_size > 0:
+                    logger.info(f"Using chunked upload with chunk_size={chunk_size} bytes")
+                    send_kwargs['chunk_size'] = chunk_size
+                
                 message = await Bot.send_video(
                     self.bot,
-                    chat_id=target_chat,
-                    video=video,
-                    caption=caption,
-                    message_thread_id=message_thread_id,
-                    supports_streaming=True,
-                    read_timeout=60,
-                    write_timeout=60,
-                    connect_timeout=60,
-                    pool_timeout=60
+                    **send_kwargs
                 )
                 logger.info(f"Successfully uploaded video: {message.message_id}")
                 return message.message_id
@@ -119,20 +194,35 @@ class TelegramUploader:
         """Upload a single audio file to Telegram."""
         target_chat = chat_id or self.chat_id
         caption = self._format_caption(post)
+        
+        # Get dynamic timeouts based on file size
+        read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(audio_path)
+        chunk_size = self._get_chunk_size(audio_path)
+        
         logger.info(f"Uploading audio for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
 
         try:
             with open(audio_path, 'rb') as audio:
+                # Prepare send_audio kwargs
+                send_kwargs = {
+                    'chat_id': target_chat,
+                    'audio': audio,
+                    'caption': caption,
+                    'message_thread_id': message_thread_id,
+                    'read_timeout': read_timeout,
+                    'write_timeout': write_timeout,
+                    'connect_timeout': connect_timeout,
+                    'pool_timeout': pool_timeout,
+                }
+                
+                # Add chunk_size for large files if supported
+                if chunk_size > 0:
+                    logger.info(f"Using chunked upload with chunk_size={chunk_size} bytes")
+                    send_kwargs['chunk_size'] = chunk_size
+                
                 message = await Bot.send_audio(
                     self.bot,
-                    chat_id=target_chat,
-                    audio=audio,
-                    caption=caption,
-                    message_thread_id=message_thread_id,
-                    read_timeout=60,
-                    write_timeout=60,
-                    connect_timeout=60,
-                    pool_timeout=60,
+                    **send_kwargs
                 )
                 logger.info(f"Successfully uploaded audio: {message.message_id}")
                 return message.message_id

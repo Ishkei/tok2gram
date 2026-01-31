@@ -15,6 +15,16 @@ from typing import Optional, List, Dict, Any, cast
 logger = logging.getLogger("tok2gram.downloader")
 
 
+class PostInaccessibleError(Exception):
+    """Raised when a post is deleted, private, or region-restricted"""
+    pass
+
+
+class PostRetryableError(Exception):
+    """Raised when a post download fails but may succeed on retry"""
+    pass
+
+
 def _extract_json_script(html_text: str, script_id: str) -> Optional[dict]:
     """Extract embedded JSON from a <script id="..."> tag."""
     try:
@@ -58,14 +68,51 @@ def _pick_first_http_url(value: Any) -> Optional[str]:
     return None
 
 
+def _extract_json_from_pattern(html_text: str, pattern: str) -> Optional[dict]:
+    """Extract JSON from HTML using a regex pattern."""
+    try:
+        m = re.search(pattern, html_text, flags=re.DOTALL)
+        if not m:
+            return None
+        payload = m.group(1).strip()
+        if not payload:
+            return None
+        return json.loads(payload)
+    except Exception:
+        return None
+
+
 def _extract_slideshow_urls_from_html(post: Post, session: requests.Session, url: str) -> Dict[str, Any]:
     """Fallback extractor for TikTok photo posts by parsing webpage embedded JSON."""
     resp = session.get(url, timeout=15)
     resp.raise_for_status()
     html_text = resp.text or ""
+    
+    # Check for login wall or error states
+    if "Log in to TikTok" in html_text or "login" in html_text.lower()[:5000]:
+        logger.warning(f"Post {post.post_id} may require login or is inaccessible")
+    
+    # Check for generic landing page (no post data)
+    if post.post_id not in html_text:
+        logger.warning(f"Post ID {post.post_id} not found in HTML - post may be deleted or private")
+        return {"image_urls": [], "audio_url": None, "inaccessible": True}
 
     sigi = _extract_json_script(html_text, "SIGI_STATE")
     universal = _extract_json_script(html_text, "__UNIVERSAL_DATA_FOR_REHYDRATION__")
+    
+    # Also check for newer data structures
+    ssr_hydrated = _extract_json_from_pattern(
+        html_text, 
+        r'<script[^>]*>window\._SSR_HYDRATED_DATA\s*=\s*({.+?})</script>'
+    )
+    init_props = _extract_json_from_pattern(
+        html_text,
+        r'<script[^>]*>window\.__INIT_PROPS__\s*=\s*({.+?})</script>'
+    )
+    webapp_data = _extract_json_from_pattern(
+        html_text,
+        r'<script[^>]*>window\._SSR_HYDRATED_DATA\s*=\s*({.+?})</script>'
+    )
 
     item: Optional[dict] = None
     if isinstance(sigi, dict) and isinstance(sigi.get("ItemModule"), dict):
@@ -76,6 +123,42 @@ def _extract_slideshow_urls_from_html(post: Post, session: requests.Session, url
     if item is None and isinstance(universal, dict):
         # Best-effort: locate an itemStruct-like dict anywhere within
         stack = [universal]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                if isinstance(cur.get("itemStruct"), dict):
+                    item = cur.get("itemStruct")
+                    break
+                # Check for webapp.video-detail structure
+                if isinstance(cur.get("video-detail"), dict):
+                    item = cur.get("video-detail")
+                    break
+                for v in cur.values():
+                    stack.append(v)
+            elif isinstance(cur, list):
+                stack.extend(cur)
+    
+    # Check SSR hydrated data
+    if item is None and isinstance(ssr_hydrated, dict):
+        # Look for video detail or item info
+        stack = [ssr_hydrated]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                if isinstance(cur.get("itemInfo"), dict):
+                    item = cur.get("itemInfo")
+                    break
+                if isinstance(cur.get("itemStruct"), dict):
+                    item = cur.get("itemStruct")
+                    break
+                for v in cur.values():
+                    stack.append(v)
+            elif isinstance(cur, list):
+                stack.extend(cur)
+    
+    # Check __INIT_PROPS__
+    if item is None and isinstance(init_props, dict):
+        stack = [init_props]
         while stack:
             cur = stack.pop()
             if isinstance(cur, dict):
@@ -199,6 +282,7 @@ def download_post(post: Post, base_download_path: str, cookie_path: Optional[str
     """
     Dispatch download based on post kind.
     Returns a dict with downloaded media paths.
+    Raises PostInaccessibleError if the post is deleted, private, or region-restricted.
     """
     if post.kind == 'video':
         path = download_video(post, base_download_path, cookie_path, cookie_content)
@@ -222,14 +306,21 @@ def download_post(post: Post, base_download_path: str, cookie_path: Optional[str
         # audio‑only formats but still contain a playable video. If the image
         # download fails, fall back to the video downloader using a reconstructed
         # /video/ URL.
-        result = download_slideshow(post, base_download_path, cookie_path, cookie_content)
-        if result:
-            if 'video' in result and 'images' not in result:
-                logger.info(f"Slideshow downloader returned a video for {post.post_id}; updating kind to video")
-                post.kind = 'video'
-                # Ensure the video is in a Telegram-friendly format
-                result['video'] = _transcode_to_telegram_mp4(result['video'])
-            return result
+        try:
+            result = download_slideshow(post, base_download_path, cookie_path, cookie_content)
+            if result:
+                if 'video' in result and 'images' not in result:
+                    logger.info(f"Slideshow downloader returned a video for {post.post_id}; updating kind to video")
+                    post.kind = 'video'
+                    # Ensure the video is in a Telegram-friendly format
+                    result['video'] = _transcode_to_telegram_mp4(result['video'])
+                return result
+        except PostInaccessibleError:
+            # Post is inaccessible - don't retry, let caller handle
+            raise
+        except Exception as e:
+            logger.warning(f"Slideshow download failed for {post.post_id}: {e}")
+        
         # Slideshow extraction failed; attempt to treat as a video. Reconstruct
         # the video URL by replacing /photo/ with /video/ if present. If not
         # present, simply reuse the existing post URL. A None return from
@@ -346,6 +437,7 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Op
     """
     Download TikTok slideshow images using gallery-dl.
     Returns dict with 'images' list and optional 'audio' path.
+    Raises PostInaccessibleError if the post is deleted, private, or region-restricted.
     """
     os.makedirs(output_path, exist_ok=True)
 
@@ -355,18 +447,12 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Op
         "--filename", "{num:>02}.{extension}",
     ]
 
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        try:
-            with open(cookie_path, 'r') as f:
-                actual_cookie = f.read().strip()
-        except Exception:
-            pass
-
-    if actual_cookie:
-        # gallery-dl 1.31.4 uses -o http-headers=... or -C for Netscape cookies.
-        # Since our cookies are raw strings, we use the header option.
-        command.extend(["-o", f"http-headers=Cookie: {actual_cookie}"])
+    # Use Netscape format cookie file with -C option if available
+    if cookie_path and os.path.exists(cookie_path):
+        command.extend(['-C', cookie_path])
+    elif cookie_content:
+        # Fallback: use http-headers with cookie content
+        command.extend(["-o", f"http-headers=Cookie: {cookie_content}"])
     
     # Always set User-Agent for better reliability
     command.extend(["-a", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"])
@@ -384,8 +470,26 @@ def _download_slideshow_gallery_dl(post: Post, output_path: str, cookie_path: Op
         )
         logger.debug(f"gallery-dl stdout: {result.stdout}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"gallery-dl failed for {post.post_id}: {e.stderr}")
-        return None
+        stderr = e.stderr or ""
+        stdout = e.stdout or ""
+        
+        # Check for "No results" - indicates deleted/private/region-restricted post
+        if "No results" in stderr or "No results" in stdout:
+            logger.warning(f"Post {post.post_id} appears to be deleted, private, or region-restricted (gallery-dl: No results)")
+            raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: No results from gallery-dl")
+        
+        # Check for 403 Forbidden
+        if "403" in stderr or "Forbidden" in stderr:
+            logger.warning(f"Post {post.post_id} returned 403 Forbidden")
+            raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: 403 Forbidden")
+        
+        logger.error(f"gallery-dl failed for {post.post_id}: {stderr}")
+        raise PostRetryableError(f"gallery-dl failed for {post.post_id}: {stderr}")
+    
+    # Check output for "No results" even on successful exit
+    if result.stdout and "No results" in result.stdout:
+        logger.warning(f"Post {post.post_id} appears to be deleted, private, or region-restricted (gallery-dl: No results)")
+        raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: No results from gallery-dl")
 
     # Collect downloaded files
     image_files: List[str] = []
@@ -459,14 +563,21 @@ def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_pat
             # into ``yt_dlp.YoutubeDL``.
             ydl_params = cast(Dict[str, Any], ydl_opts)
             with yt_dlp.YoutubeDL(ydl_params) as ydl:  # type: ignore[arg-type]
-                # NOTE: TikTok photo URLs (`/photo/<id>`) may be unsupported by yt-dlp.
-                info = ydl.extract_info(post.url, download=False)
+                # Convert /photo/ URL to /video/ for yt-dlp compatibility
+                # yt-dlp doesn't support /photo/ URLs directly, needs /video/ URL
+                video_url = post.url.replace('/photo/', '/video/')
+                logger.info(f"Using converted URL for yt-dlp: {video_url}")
+                info = ydl.extract_info(video_url, download=False)
         except Exception as e:
+            error_str = str(e)
             logger.warning(
                 "yt-dlp metadata extraction failed for slideshow %s; falling back to HTML parsing. Error: %s",
                 post.post_id,
                 e,
             )
+            # Check for inaccessible post errors
+            if "No results" in error_str or "403" in error_str or "Forbidden" in error_str:
+                raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: {e}")
 
         image_urls: List[str] = []
         audio_url: Optional[str] = None
@@ -509,6 +620,10 @@ def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_pat
             extracted = _extract_slideshow_urls_from_html(post, session, post.url)
             image_urls = extracted.get('image_urls') or []
             audio_url = extracted.get('audio_url')
+            
+            # Check if post is inaccessible based on HTML parsing
+            if extracted.get('inaccessible'):
+                raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: HTML parsing failed")
 
         if not image_urls:
             logger.error(f"No images found in slideshow {post.post_id}")
@@ -560,9 +675,15 @@ def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_pat
 
         return {"images": downloaded_files, "audio": audio_path}
 
+    except PostInaccessibleError:
+        raise
     except Exception as e:
+        error_str = str(e)
+        # Check for permanent failure indicators
+        if "403" in error_str or "Forbidden" in error_str:
+            raise PostInaccessibleError(f"Post {post.post_id} is inaccessible: {e}")
         logger.error(f"Failed to download slideshow {post.post_id}: {e}")
-        return None
+        raise PostRetryableError(f"Failed to download slideshow {post.post_id}: {e}")
 
 
 def download_slideshow(post: Post, base_download_path: str, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -571,16 +692,24 @@ def download_slideshow(post: Post, base_download_path: str, cookie_path: Optiona
     
     Uses gallery-dl as the primary method for photo posts (more reliable for TikTok images).
     Falls back to yt-dlp/HTML parsing if gallery-dl is unavailable or fails.
+    
+    Raises PostInaccessibleError if the post is deleted, private, or region-restricted.
     """
     creator_path = os.path.join(base_download_path, post.creator, post.post_id)
     
     # Try gallery-dl first (preferred for TikTok photo posts)
     if _is_gallery_dl_available():
         logger.info(f"Using gallery-dl for slideshow {post.post_id}")
-        result = _download_slideshow_gallery_dl(post, creator_path, cookie_path=cookie_path, cookie_content=cookie_content)
-        if result and (result.get("images") or result.get("video")):
-            return result
-        logger.warning(f"gallery-dl failed for {post.post_id}, falling back to yt-dlp/HTML method")
+        try:
+            result = _download_slideshow_gallery_dl(post, creator_path, cookie_path=cookie_path, cookie_content=cookie_content)
+            if result and (result.get("images") or result.get("video")):
+                return result
+            logger.warning(f"gallery-dl failed for {post.post_id}, falling back to yt-dlp/HTML method")
+        except PostInaccessibleError:
+            # Re-raise inaccessible errors immediately - don't retry
+            raise
+        except Exception as e:
+            logger.warning(f"gallery-dl failed for {post.post_id}: {e}, falling back to yt-dlp/HTML method")
     else:
         logger.info(f"gallery-dl not available, using fallback method for slideshow {post.post_id}")
     

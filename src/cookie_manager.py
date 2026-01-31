@@ -43,12 +43,14 @@ class CookieManager:
             logger.error(f"Failed to read cookie file {path}: {e}")
             return None
 
-    def rotate(self):
-        """Switch to the next available cookie."""
+    def rotate(self) -> Optional[str]:
+        """Switch to the next available cookie and return the new cookie path."""
         if not self.cookie_files:
-            return
+            return None
         self.current_index = (self.current_index + 1) % len(self.cookie_files)
-        logger.info(f"Rotated to cookie file: {self.get_current_cookie_path()}")
+        new_path = self.get_current_cookie_path()
+        logger.info(f"Rotated to cookie file: {new_path}")
+        return new_path
 
     def handle_failure(self):
         """Called when a request fails due to potential blocking."""
