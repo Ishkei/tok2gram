@@ -12,7 +12,7 @@ except ImportError:
 from src.config_loader import load_config, load_creators
 from src.tiktok_api import fetch_posts, sort_posts_chronologically
 from src.downloader import download_post
-from src.state import StateStore
+from src.core.state import StateStore
 from src.telegram_uploader import TelegramUploader
 from src.cookie_manager import CookieManager
 
@@ -33,6 +33,7 @@ logger = logging.getLogger("tok2gram")
 
 async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
     username = creator_config['username']
+    user_id = creator_config.get('user_id')
     chat_id = creator_config.get('chat_id') or settings.get('telegram_chat_id')
     fetch_depth = settings.get('fetch_depth', 10)
 
@@ -40,18 +41,22 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
         logger.error(f"No chat_id specified for creator {username}")
         return
 
-    logger.info(f"Processing creator: {username}")
+    # Log which identifier we're using
+    if user_id:
+        logger.info(f"Processing creator: {username} (using user_id: {user_id})")
+    else:
+        logger.info(f"Processing creator: {username}")
     
     cookie_content = cookie_manager.get_cookie_content()
     cookie_path = cookie_manager.get_current_cookie_path()
-    posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content)
+    posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id)
     
     if not posts and cookie_manager.cookie_files:
         logger.warning(f"No posts found for {username}, attempting cookie rotation...")
         cookie_manager.rotate()
         cookie_content = cookie_manager.get_cookie_content()
         cookie_path = cookie_manager.get_current_cookie_path()
-        posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content)
+        posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id)
 
     sorted_posts = sort_posts_chronologically(posts)
     

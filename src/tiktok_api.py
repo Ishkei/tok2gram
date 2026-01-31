@@ -23,23 +23,34 @@ def _probe_kind(url: str, ydl_base_opts: dict) -> str:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore
             info = ydl.extract_info(url, download=False)
 
-        # Strong signal: playlist / entries => slideshow-like
-        entries = info.get("entries")
-        if info.get("_type") == "playlist" and entries:
-            return "slideshow"
-
-        # Another strong signal: TikTok photo posts often expose MANY thumbnails/images
-        thumbs = info.get("thumbnails") or []
-        if isinstance(thumbs, list) and len(thumbs) >= 2:
-            return "slideshow"
-
-        # If formats exist but all are audio-only, it's very likely a slideshow
+        # If formats exist and contain any video stream, it's definitely a video.
+        # This helps correctly classify posts that were redirected from /photo/ to /video/.
         fmts = info.get("formats") or []
+        if any((f.get("vcodec") != "none") for f in fmts if isinstance(f, dict)):
+            return "video"
+
+        # Strong signal for slideshow: yt-dlp identifies it as a playlist or has entries.
+        entries = info.get("entries")
+        if info.get("_type") == "playlist" or entries:
+            return "slideshow"
+
+        # If formats exist but all are audio-only, it's very likely a slideshow.
         if fmts and all((f.get("vcodec") == "none") for f in fmts if isinstance(f, dict)):
             return "slideshow"
 
+        # If the URL explicitly contains /photo/, trust it as a fallback.
+        if "/photo/" in url:
+            return "slideshow"
+
     except Exception as e:
-        logger.debug(f"Probe failed for {url}: {e}")
+        logger.warning(f"Probe failed for {url}: {e}")
+        # On failure, fall back to URL-based guess.
+        if "/photo/" in url:
+            return "slideshow"
+        # If probe fails for a /video/ URL (e.g., "No video formats found"), consider it a slideshow fallback
+        if "/video/" in url:
+            logger.warning(f"Video probe failed for {url}; treating as slideshow fallback")
+            return "slideshow"
 
     return "video"
 
@@ -52,15 +63,30 @@ class Post:
     caption: str
     created_at: Optional[int]  # unix epoch
 
-def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None) -> List[Post]:
+def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None, user_id: Optional[str] = None) -> List[Post]:
     """
     Fetch latest posts for a TikTok user using yt-dlp metadata extraction.
+    
+    Args:
+        username: The TikTok username
+        depth: Number of posts to fetch
+        cookie_path: Path to cookie file
+        cookie_content: Cookie content string
+        user_id: Optional TikTok user ID (numeric). If provided, will be used instead of username
+                 for fetching posts, which helps with accounts that have privacy settings
+                 preventing username-based lookups.
     """
-    url = f"https://www.tiktok.com/@{username}"
+    # If user_id is provided, use tiktokuser: prefix format
+    if user_id:
+        url = f"tiktokuser:{user_id}"
+    # If username is already in tiktokuser: format or is numeric, use it directly
+    elif username.startswith("tiktokuser:") or username.isdigit():
+        url = username if username.startswith("tiktokuser:") else f"tiktokuser:{username}"
+    else:
+        url = f"https://www.tiktok.com/@{username}"
     
     ydl_opts = {
         'extract_flat': True,
-        'playlist_items': f"1:{depth}",
         'quiet': True,
         'no_warnings': True,
         'http_headers': {
@@ -69,6 +95,9 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
+    
+    if depth and depth > 0:
+        ydl_opts['playlist_items'] = f"1:{depth}"
     
     actual_cookie = cookie_content
     if not actual_cookie and cookie_path and os.path.exists(cookie_path):
@@ -108,7 +137,9 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
             logger.warning(f"No posts found for creator: {username}")
             return []
 
-        entries = info['entries']  # type: ignore
+        entries = info.get('entries') or []
+        if not isinstance(entries, list):
+            entries = []
         for entry in entries:
             if not entry:
                 continue
