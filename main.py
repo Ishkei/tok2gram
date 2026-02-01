@@ -201,6 +201,8 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
                     logger.error(f"Failed to download post {post.post_id}")
                     continue
                 
+                # Record that post was downloaded
+                state.record_download(post.post_id, post.creator, post.kind, post.url, post.created_at)
                 # Record downloaded files to database for resumption
                 state.record_download_files(post.post_id, media)
                     
