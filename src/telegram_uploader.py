@@ -166,11 +166,12 @@ class TelegramUploader:
 
     def _compress_video(self, input_path: str, target_size_mb: float = 47.0, max_attempts: int = 2) -> str:
         """
-        Compress video to target size using 2-pass encoding with progress tracking.
+        Compress video to target size using single-pass CRF encoding with progress tracking.
+        Uses CRF (Constant Rate Factor) for faster encoding compared to 2-pass.
         Returns path to compressed video (or original if compression fails/unnecessary).
         """
         attempt = 0
-        current_target_mb = target_size_mb
+        current_crf = 28  # Start with moderate CRF (23=high quality, 28=smaller/faster)
         
         while attempt < max_attempts:
             attempt += 1
@@ -179,11 +180,6 @@ class TelegramUploader:
                 if not duration:
                     logger.warning("Could not determine duration, skipping compression")
                     return input_path
-
-                # Calculate target bitrate with safety margin
-                audio_bitrate_k = 128
-                target_total_bitrate_k = (current_target_mb * 8 * 1024) / duration
-                target_video_bitrate_k = max(100, target_total_bitrate_k - audio_bitrate_k)
 
                 # Create temp output path
                 directory = os.path.dirname(input_path) or "."
@@ -201,94 +197,53 @@ class TelegramUploader:
                         logger.info(f"Existing compressed file is {existing_size:.2f}MB (> 50MB), re-compressing")
                         os.remove(output_path)
 
-                logger.info(f"Compressing {os.path.basename(input_path)} to < {current_target_mb}MB (duration: {duration:.1f}s, bitrate: {target_video_bitrate_k:.0f}k, attempt {attempt}/{max_attempts})")
+                logger.info(f"Compressing {os.path.basename(input_path)} with CRF {current_crf} (duration: {duration:.1f}s, attempt {attempt}/{max_attempts})")
 
                 # Start progress tracking
                 with progress_manager:
-                    # 2-pass encoding for better quality at specific size
-                    # Pass 1
-                    pass1_task = progress_manager.add_task(
-                        "compress_pass1",
+                    # Single-pass CRF encoding - much faster than 2-pass
+                    compress_task = progress_manager.add_task(
+                        "compress",
                         total=duration,
-                        operation=f"Compressing (Pass 1/2): {os.path.basename(input_path)}",
+                        operation=f"Compressing: {os.path.basename(input_path)}",
                     )
                     
-                    pass1_cmd = [
+                    # Single-pass CRF encoding
+                    # CRF 28 provides good balance of quality and file size
+                    # Higher CRF = smaller file, faster encoding (23 is default, 28 is good for compression)
+                    cmd = [
                         "ffmpeg", "-y", "-i", input_path,
-                        "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
-                        "-pass", "1", "-an",  # -an = no audio in pass 1
+                        "-c:v", "libx264",
+                        "-crf", str(current_crf),
                         "-preset", "ultrafast",
-                        "-f", "mp4", "/dev/null"
-                    ]
-                    
-                    process = subprocess.Popen(
-                        pass1_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        universal_newlines=True,
-                        cwd=directory
-                    )
-                    
-                    # Monitor pass 1 progress
-                    for line in process.stdout:
-                        progress_info = self._parse_ffmpeg_progress(line)
-                        if progress_info:
-                            progress_manager.update(pass1_task, completed=progress_info['time'])
-                    
-                    process.wait()
-                    progress_manager.update(pass1_task, completed=duration, refresh=True)
-                    progress_manager.remove_task(pass1_task)
-                    
-                    if process.returncode != 0:
-                        logger.error("Pass 1 encoding failed")
-                        return input_path
-
-                    # Pass 2
-                    pass2_task = progress_manager.add_task(
-                        "compress_pass2",
-                        total=duration,
-                        operation=f"Compressing (Pass 2/2): {os.path.basename(input_path)}",
-                    )
-                    
-                    pass2_cmd = [
-                        "ffmpeg", "-y", "-i", input_path,
-                        "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
-                        "-pass", "2",
-                        "-c:a", "aac", "-b:a", f"{audio_bitrate_k}k",
-                        "-preset", "ultrafast",
+                        "-c:a", "aac", "-b:a", "128k",
                         "-movflags", "+faststart",
+                        "-threads", "4",  # Optimize for your 4-thread CPU
                         output_path
                     ]
                     
                     process = subprocess.Popen(
-                        pass2_cmd,
+                        cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         universal_newlines=True,
                         cwd=directory
                     )
                     
-                    # Monitor pass 2 progress
-                    for line in process.stdout:
-                        progress_info = self._parse_ffmpeg_progress(line)
-                        if progress_info:
-                            progress_manager.update(pass2_task, completed=progress_info['time'])
+                    # Monitor progress
+                    if process.stdout:
+                        for line in process.stdout:
+                            progress_info = self._parse_ffmpeg_progress(line)
+                            if progress_info:
+                                progress_manager.update(compress_task, completed=progress_info['time'])
                     
                     process.wait()
-                    progress_manager.update(pass2_task, completed=duration, refresh=True)
-                    progress_manager.remove_task(pass2_task)
+                    progress_manager.update(compress_task, completed=int(duration), refresh=True)
+                    progress_manager.remove_task(compress_task)
                     
                     if process.returncode != 0:
-                        logger.error("Pass 2 encoding failed")
+                        logger.error("Compression encoding failed")
                         return input_path
-
-                # Cleanup pass log files
-                for f in os.listdir(directory):
-                    if f.startswith("ffmpeg2pass"):
-                        try:
-                            os.remove(os.path.join(directory, f))
-                        except:
-                            pass
                 
                 if os.path.exists(output_path):
                     new_size_mb = os.path.getsize(output_path) / (1024 * 1024)
@@ -296,9 +251,9 @@ class TelegramUploader:
                     
                     # Verify the compressed file is actually under 50MB
                     if new_size_mb >= 50:
-                        logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying with lower target...")
-                        # Reduce target by 20% and try again
-                        current_target_mb = current_target_mb * 0.8
+                        logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying with higher CRF...")
+                        # Increase CRF for more aggressive compression
+                        current_crf = min(35, current_crf + 4)  # Cap at CRF 35
                         os.remove(output_path)
                         continue
                     
@@ -310,8 +265,8 @@ class TelegramUploader:
                 logger.error(f"Compression failed (attempt {attempt}/{max_attempts}): {e}")
                 if attempt >= max_attempts:
                     return input_path
-                # Reduce target and retry
-                current_target_mb = current_target_mb * 0.8
+                # Increase CRF and retry
+                current_crf = min(35, current_crf + 4)
 
         return input_path
 
@@ -321,7 +276,7 @@ class TelegramUploader:
         This is currently limited as python-telegram-bot doesn't support progress callbacks easily.
         We'll use a periodic update approach instead.
         """
-        last_update_time = [0]  # Use list to allow modification in closure
+        last_update_time: list[float] = [0.0]  # Use list to allow modification in closure
         
         def callback(current: int, total: int):
             current_time = time.time()
