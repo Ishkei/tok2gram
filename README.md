@@ -30,6 +30,7 @@ A robust, production-ready TikTok content monitoring and reposting system that a
 - **📊 Comprehensive Logging**: Detailed logs for monitoring and debugging
 - **🔧 Flexible Configuration**: YAML-based configuration for easy management
 - **🧪 Test Coverage**: 16 unit tests ensuring reliability
+- **💾 Upload Resumption**: Automatically resumes incomplete uploads after interruptions or crashes
 
 ## Quick Start
 
@@ -91,6 +92,8 @@ A robust, production-ready TikTok content monitoring and reposting system that a
    ```bash
    mkdir -p data/{cookies,downloads,logs}
    ```
+   
+   > **Note**: The `data/state.db` SQLite database is automatically created on first run. You don't need to create it manually.
 
 ## Configuration
 
@@ -134,6 +137,31 @@ python main.py
 cd src
 python main.py --config ../config/custom-config.yaml
 ```
+
+### Upload Resumption
+
+Tok2gram automatically tracks downloads and uploads separately. If the program is interrupted (terminal closed, system crash, etc.), it will resume uploading any videos that were downloaded but not fully uploaded when you restart it.
+
+**How it works**:
+1. Downloads are recorded to the SQLite database (`data/state.db`) with their file paths
+2. On startup, the program checks for incomplete uploads for each creator
+3. Incomplete uploads are automatically resumed before processing new content
+4. Files are verified to exist before attempting upload
+
+**Benefits**:
+- No manual intervention needed after interruptions
+- Saves bandwidth by not re-downloading
+- Ensures no content is lost due to crashes
+- Handles missing/corrupted files gracefully
+
+**Example log output**:
+```
+INFO - Found 3 incomplete upload(s) for creator_username, resuming...
+INFO - Queued incomplete upload: 7234567890123456789 (video)
+INFO - Resumed 3 incomplete upload(s) for creator_username
+```
+
+> **Note**: The `data/state.db` database is automatically created and managed by the program. The database schema automatically migrates when you update to a version with new features.
 
 ### Running Tests
 

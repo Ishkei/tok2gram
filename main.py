@@ -4,13 +4,14 @@ import asyncio
 import time
 import random
 import os
+import json
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
 from src.config_loader import load_config, load_creators
-from src.tiktok_api import fetch_posts, sort_posts_chronologically
+from src.tiktok_api import fetch_posts, sort_posts_chronologically, Post
 from src.downloader import download_post, PostInaccessibleError
 from src.core.state import StateStore
 from src.telegram_uploader import TelegramUploader
@@ -75,6 +76,63 @@ async def upload_worker(queue: asyncio.Queue, uploader: TelegramUploader, state:
         except Exception as e:
             logger.error(f"Worker error: {e}")
 
+async def resume_incomplete_uploads(username: str, state: StateStore, uploader: TelegramUploader, queue: asyncio.Queue, chat_id: str) -> int:
+    """
+    Check for and resume incomplete uploads for a creator.
+    Returns count of posts queued for upload.
+    """
+    incomplete = state.get_incomplete_uploads(creator=username)
+    if not incomplete:
+        return 0
+    
+    logger.info(f"Found {len(incomplete)} incomplete upload(s) for {username}, resuming...")
+    resumed_count = 0
+    
+    for post_id, creator, kind, source_url, downloaded_files_json in incomplete:
+        try:
+            # Parse downloaded files
+            files_dict = json.loads(downloaded_files_json) if downloaded_files_json else None
+            if not files_dict:
+                logger.warning(f"No file paths recorded for {post_id}, skipping")
+                continue
+            
+            # Verify files still exist
+            files_exist = True
+            if 'video' in files_dict:
+                if not os.path.exists(files_dict['video']):
+                    logger.warning(f"Video file missing for {post_id}: {files_dict['video']}")
+                    files_exist = False
+            elif 'images' in files_dict:
+                for img_path in files_dict.get('images', []):
+                    if not os.path.exists(img_path):
+                        logger.warning(f"Image file missing for {post_id}: {img_path}")
+                        files_exist = False
+                        break
+            
+            if not files_exist:
+                logger.warning(f"Skipping {post_id} - downloaded files no longer exist")
+                continue
+            
+            # Reconstruct Post object
+            post = Post(
+                post_id=post_id,
+                creator=creator,
+                kind=kind,
+                url=source_url,
+                caption=None,  # Caption not needed for resume
+                created_at=None
+            )
+            
+            # Queue for upload
+            await queue.put((post, files_dict))
+            resumed_count += 1
+            logger.info(f"Queued incomplete upload: {post_id} ({kind})")
+            
+        except Exception as e:
+            logger.error(f"Failed to resume upload for {post_id}: {e}")
+    
+    return resumed_count
+
 async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
     username = creator_config['username']
     user_id = creator_config.get('user_id')
@@ -120,6 +178,11 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     worker_task = asyncio.create_task(upload_worker(queue, uploader, state, chat_id, stats))
     
     try:
+        # First, resume any incomplete uploads
+        resumed = await resume_incomplete_uploads(username, state, uploader, queue, chat_id)
+        if resumed > 0:
+            logger.info(f"Resumed {resumed} incomplete upload(s) for {username}")
+        
         for post in sorted_posts:
             if state.is_processed(post.post_id):
                 continue
@@ -137,6 +200,9 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
                 if not media:
                     logger.error(f"Failed to download post {post.post_id}")
                     continue
+                
+                # Record downloaded files to database for resumption
+                state.record_download_files(post.post_id, media)
                     
                 # Queue for upload (this will not block unless queue is full, which is default infinite)
                 await queue.put((post, media))

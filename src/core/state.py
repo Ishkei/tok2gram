@@ -28,10 +28,19 @@ class StateStore:
                         downloaded_at INTEGER,
                         uploaded_at INTEGER,
                         telegram_chat_id TEXT,
-                        telegram_message_id TEXT
+                        telegram_message_id TEXT,
+                        downloaded_files TEXT
                     )
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_creator_uploaded ON posts(creator, uploaded_at)")
+                
+                # Check if downloaded_files column exists, add if not (migration)
+                cursor = conn.execute("PRAGMA table_info(posts)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'downloaded_files' not in columns:
+                    logger.info("Migrating database: adding downloaded_files column")
+                    conn.execute("ALTER TABLE posts ADD COLUMN downloaded_files TEXT")
+                
                 conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -107,3 +116,75 @@ class StateStore:
                 conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error marking post {post_id} as uploaded: {e}")
+
+    def record_download_files(self, post_id: str, files_dict: dict):
+        """
+        Record downloaded file paths for a post.
+        files_dict should be like {'video': '/path/to/video.mp4'} or {'images': [...], 'audio': '...'}
+        """
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE posts SET 
+                        downloaded_files = ?
+                    WHERE post_id = ?
+                """, (json.dumps(files_dict), post_id))
+                conn.commit()
+                logger.debug(f"Recorded download files for {post_id}: {files_dict}")
+        except sqlite3.Error as e:
+            logger.error(f"Error recording download files for {post_id}: {e}")
+
+    def get_downloaded_files(self, post_id: str) -> Optional[dict]:
+        """
+        Retrieve stored file paths for a post.
+        Returns None if no files recorded or post doesn't exist.
+        """
+        try:
+            import json
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT downloaded_files FROM posts WHERE post_id = ?",
+                    (post_id,)
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    return json.loads(row[0])
+                return None
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving download files for {post_id}: {e}")
+            return None
+
+    def get_incomplete_uploads(self, creator: Optional[str] = None) -> list:
+        """
+        Get posts that have been downloaded but not yet uploaded.
+        Returns list of tuples: (post_id, creator, kind, source_url, downloaded_files_json)
+        
+        Args:
+            creator: Optional creator username to filter by
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                if creator:
+                    cursor = conn.execute("""
+                        SELECT post_id, creator, kind, source_url, downloaded_files
+                        FROM posts
+                        WHERE creator = ? 
+                            AND downloaded_at IS NOT NULL 
+                            AND uploaded_at IS NULL
+                            AND downloaded_files IS NOT NULL
+                        ORDER BY downloaded_at ASC
+                    """, (creator,))
+                else:
+                    cursor = conn.execute("""
+                        SELECT post_id, creator, kind, source_url, downloaded_files
+                        FROM posts
+                        WHERE downloaded_at IS NOT NULL 
+                            AND uploaded_at IS NULL
+                            AND downloaded_files IS NOT NULL
+                        ORDER BY downloaded_at ASC
+                    """)
+                return cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Error querying incomplete uploads: {e}")
+            return []
