@@ -4,7 +4,7 @@ import random
 import logging
 import os
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Any
 
 logger = logging.getLogger("tok2gram.tiktok")
 
@@ -92,7 +92,7 @@ class Post:
     creator: str
     kind: str  # 'video' or 'slideshow'
     url: str
-    caption: str
+    caption: Optional[str]
     created_at: Optional[int]  # unix epoch
 
 def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = None, cookie_content: Optional[str] = None, user_id: Optional[str] = None) -> List[Post]:
@@ -117,7 +117,7 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     else:
         url = f"https://www.tiktok.com/@{username}"
     
-    ydl_opts = {
+    ydl_opts: dict[str, Any] = {
         'extract_flat': True,
         'quiet': True,
         'no_warnings': True,
@@ -132,7 +132,7 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
         ydl_opts['cookiefile'] = actual_cookie_path
     elif cookie_content:
         # Fallback: if cookie content is provided directly, use it in headers
-        ydl_opts['http_headers']['Cookie'] = cookie_content
+        ydl_opts['http_headers'] = {'Cookie': cookie_content}
 
     posts = []
     
