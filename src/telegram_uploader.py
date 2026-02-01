@@ -2,16 +2,47 @@ import logging
 import asyncio
 import subprocess
 import os
+import re
+import time
 from typing import List, Optional, Any
 from telegram import Bot, InputMediaPhoto, InputFile
 from telegram.constants import ParseMode
 from .tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
+from rich.progress import (
+    Progress,
+    TaskID,
+    TextColumn,
+    BarColumn,
+    DownloadColumn,
+    TransferSpeedColumn,
+    TimeRemainingColumn,
+    SpinnerColumn,
+)
+from rich.console import Console
 
 MAX_ALBUM = 10  # Telegram's hard limit for media groups
 CHUNK_DELAY = 1.5  # Delay between chunks to reduce flood risk (seconds)
 
 logger = logging.getLogger("tok2gram.telegram")
+console = Console()
+
+# Global progress manager for tracking multiple operations
+# Can be used to show compression and upload progress simultaneously
+progress_manager = Progress(
+    SpinnerColumn(),
+    TextColumn("[bold blue]{task.fields[operation]}", justify="right"),
+    BarColumn(bar_width=None),
+    "[progress.percentage]{task.percentage:>3.1f}%",
+    "•",
+    DownloadColumn(),
+    "•",
+    TransferSpeedColumn(),
+    "•",
+    TimeRemainingColumn(),
+    console=console,
+    transient=False,  # Keep bars visible after completion
+)
 
 
 def _has_video_stream(path: str) -> bool:
@@ -115,70 +146,189 @@ class TelegramUploader:
             logger.warning(f"Failed to get duration for {file_path}: {e}")
         return None
 
-    def _compress_video(self, input_path: str, target_size_mb: float = 49.0) -> str:
+    def _parse_ffmpeg_progress(self, line: str) -> Optional[dict]:
         """
-        Compress video to target size using 2-pass encoding.
+        Parse ffmpeg progress output line.
+        Returns dict with frame, fps, time, speed, etc. if it's a progress line.
+        """
+        # ffmpeg outputs progress in format: frame=1234 fps=30 time=00:01:23.45 ...
+        progress_pattern = r'frame=\s*(\d+)\s+fps=\s*([\d.]+)\s+.*time=(\d{2}):(\d{2}):(\d{2}\.\d{2})'
+        match = re.search(progress_pattern, line)
+        if match:
+            hours, minutes, seconds = int(match.group(3)), int(match.group(4)), float(match.group(5))
+            time_seconds = hours * 3600 + minutes * 60 + seconds
+            return {
+                'frame': int(match.group(1)),
+                'fps': float(match.group(2)),
+                'time': time_seconds
+            }
+        return None
+
+    def _compress_video(self, input_path: str, target_size_mb: float = 47.0, max_attempts: int = 2) -> str:
+        """
+        Compress video to target size using 2-pass encoding with progress tracking.
         Returns path to compressed video (or original if compression fails/unnecessary).
         """
-        try:
-            duration = self._get_duration(input_path)
-            if not duration:
-                logger.warning("Could not determine duration, skipping compression")
+        attempt = 0
+        current_target_mb = target_size_mb
+        
+        while attempt < max_attempts:
+            attempt += 1
+            try:
+                duration = self._get_duration(input_path)
+                if not duration:
+                    logger.warning("Could not determine duration, skipping compression")
+                    return input_path
+
+                # Calculate target bitrate with safety margin
+                audio_bitrate_k = 128
+                target_total_bitrate_k = (current_target_mb * 8 * 1024) / duration
+                target_video_bitrate_k = max(100, target_total_bitrate_k - audio_bitrate_k)
+
+                # Create temp output path
+                directory = os.path.dirname(input_path) or "."
+                filename = os.path.basename(input_path)
+                base, ext = os.path.splitext(filename)
+                output_path = os.path.join(directory, f"{base}_compressed{ext}")
+                
+                # Check if compressed file already exists and is under limit
+                if os.path.exists(output_path):
+                    existing_size = os.path.getsize(output_path) / (1024 * 1024)
+                    if existing_size < 50:
+                        logger.info(f"Using existing compressed file: {existing_size:.2f}MB")
+                        return output_path
+                    else:
+                        logger.info(f"Existing compressed file is {existing_size:.2f}MB (> 50MB), re-compressing")
+                        os.remove(output_path)
+
+                logger.info(f"Compressing {os.path.basename(input_path)} to < {current_target_mb}MB (duration: {duration:.1f}s, bitrate: {target_video_bitrate_k:.0f}k, attempt {attempt}/{max_attempts})")
+
+                # Start progress tracking
+                with progress_manager:
+                    # 2-pass encoding for better quality at specific size
+                    # Pass 1
+                    pass1_task = progress_manager.add_task(
+                        "compress_pass1",
+                        total=duration,
+                        operation=f"Compressing (Pass 1/2): {os.path.basename(input_path)}",
+                    )
+                    
+                    pass1_cmd = [
+                        "ffmpeg", "-y", "-i", input_path,
+                        "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
+                        "-pass", "1", "-an",  # -an = no audio in pass 1
+                        "-f", "mp4", "/dev/null"
+                    ]
+                    
+                    process = subprocess.Popen(
+                        pass1_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        universal_newlines=True,
+                        cwd=directory
+                    )
+                    
+                    # Monitor pass 1 progress
+                    for line in process.stdout:
+                        progress_info = self._parse_ffmpeg_progress(line)
+                        if progress_info:
+                            progress_manager.update(pass1_task, completed=progress_info['time'])
+                    
+                    process.wait()
+                    progress_manager.update(pass1_task, completed=duration, refresh=True)
+                    progress_manager.remove_task(pass1_task)
+                    
+                    if process.returncode != 0:
+                        logger.error("Pass 1 encoding failed")
+                        return input_path
+
+                    # Pass 2
+                    pass2_task = progress_manager.add_task(
+                        "compress_pass2",
+                        total=duration,
+                        operation=f"Compressing (Pass 2/2): {os.path.basename(input_path)}",
+                    )
+                    
+                    pass2_cmd = [
+                        "ffmpeg", "-y", "-i", input_path,
+                        "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
+                        "-pass", "2",
+                        "-c:a", "aac", "-b:a", f"{audio_bitrate_k}k",
+                        "-movflags", "+faststart",
+                        output_path
+                    ]
+                    
+                    process = subprocess.Popen(
+                        pass2_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        universal_newlines=True,
+                        cwd=directory
+                    )
+                    
+                    # Monitor pass 2 progress
+                    for line in process.stdout:
+                        progress_info = self._parse_ffmpeg_progress(line)
+                        if progress_info:
+                            progress_manager.update(pass2_task, completed=progress_info['time'])
+                    
+                    process.wait()
+                    progress_manager.update(pass2_task, completed=duration, refresh=True)
+                    progress_manager.remove_task(pass2_task)
+                    
+                    if process.returncode != 0:
+                        logger.error("Pass 2 encoding failed")
+                        return input_path
+
+                # Cleanup pass log files
+                for f in os.listdir(directory):
+                    if f.startswith("ffmpeg2pass"):
+                        try:
+                            os.remove(os.path.join(directory, f))
+                        except:
+                            pass
+                
+                if os.path.exists(output_path):
+                    new_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+                    console.print(f"✓ Compressed {os.path.basename(input_path)}: {new_size_mb:.2f}MB", style="bold green")
+                    
+                    # Verify the compressed file is actually under 50MB
+                    if new_size_mb >= 50:
+                        logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying with lower target...")
+                        # Reduce target by 20% and try again
+                        current_target_mb = current_target_mb * 0.8
+                        os.remove(output_path)
+                        continue
+                    
+                    return output_path
+                
                 return input_path
 
-            # Calculate target bitrate
-            # target_size_bits = target_size_mb * 8 * 1024 * 1024
-            # target_bitrate = target_size_bits / duration
-            # Use a slightly lower bitrate to be safe (audio is separate)
-            audio_bitrate_k = 128
-            target_total_bitrate_k = (target_size_mb * 8 * 1024) / duration
-            target_video_bitrate_k = max(100, target_total_bitrate_k - audio_bitrate_k)
+            except Exception as e:
+                logger.error(f"Compression failed (attempt {attempt}/{max_attempts}): {e}")
+                if attempt >= max_attempts:
+                    return input_path
+                # Reduce target and retry
+                current_target_mb = current_target_mb * 0.8
 
-            logger.info(f"Compressing {input_path} to < {target_size_mb}MB (duration: {duration}s, target video bitrate: {target_video_bitrate_k:.0f}k)")
+        return input_path
 
-            # Create temp output path
-            directory = os.path.dirname(input_path) or "."
-            filename = os.path.basename(input_path)
-            base, ext = os.path.splitext(filename)
-            output_path = os.path.join(directory, f"{base}_compressed{ext}")
-
-            # 2-pass encoding for better quality at specific size
-            # Pass 1
-            pass1_cmd = [
-                "ffmpeg", "-y", "-i", input_path,
-                "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k", "-pass", "1",
-                "-f", "mp4", "/dev/null"
-            ]
-            subprocess.run(pass1_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=directory)
-
-            # Pass 2
-            pass2_cmd = [
-                "ffmpeg", "-y", "-i", input_path,
-                "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k", "-pass", "2",
-                "-c:a", "aac", "-b:a", f"{audio_bitrate_k}k",
-                "-movflags", "+faststart",
-                output_path
-            ]
-            subprocess.run(pass2_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=directory)
-
-            # Cleanup pass log files
-            for f in os.listdir(directory):
-                if f.startswith("ffmpeg2pass"):
-                    try:
-                        os.remove(os.path.join(directory, f))
-                    except:
-                        pass
-            
-            if os.path.exists(output_path):
-                new_size = os.path.getsize(output_path) / (1024 * 1024)
-                logger.info(f"Compression complete: {new_size:.2f}MB")
-                return output_path
-            
-            return input_path
-
-        except Exception as e:
-            logger.error(f"Compression failed: {e}")
-            return input_path
+    def _create_upload_callback(self, task_id: TaskID, file_name: str):
+        """
+        Create a progress callback for Telegram uploads.
+        This is currently limited as python-telegram-bot doesn't support progress callbacks easily.
+        We'll use a periodic update approach instead.
+        """
+        last_update_time = [0]  # Use list to allow modification in closure
+        
+        def callback(current: int, total: int):
+            current_time = time.time()
+            # Update every 2 seconds to avoid spamming
+            if current_time - last_update_time[0] >= 2:
+                progress_manager.update(task_id, completed=current, total=total)
+                last_update_time[0] = current_time
+        
+        return callback
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def upload_video(self, post: Post, video_path: str, chat_id: Optional[str] = None, message_thread_id: Optional[int] = None) -> Optional[int]:
@@ -210,8 +360,6 @@ class TelegramUploader:
         # Get dynamic timeouts based on file size
         read_timeout, write_timeout, connect_timeout, pool_timeout = self._get_dynamic_timeouts(final_video_path)
         
-        logger.info(f"Uploading video for post {post.post_id} to {target_chat} (thread: {message_thread_id})")
-
         # Some downloads can be audio-only (e.g. .m4a). If we try to send those as
         # a video, Telegram Desktop can show "Video.Unsupported.Desktop".
         # In that case, fall back to sending as audio so it plays everywhere.
@@ -220,6 +368,7 @@ class TelegramUploader:
                 "File has no video stream; sending as audio instead: %s",
                 final_video_path,
             )
+            # Use audio upload without progress tracking (usually smaller files)
             try:
                 with open(final_video_path, 'rb') as audio:
                     message = await Bot.send_audio(
@@ -233,33 +382,79 @@ class TelegramUploader:
                         connect_timeout=connect_timeout,
                         pool_timeout=pool_timeout,
                     )
-                    logger.info(f"Successfully uploaded audio: {message.message_id}")
+                    console.print(f"✓ Uploaded audio {os.path.basename(final_video_path)}", style="bold green")
                     return message.message_id
             except Exception as e:
                 logger.error(f"Failed to upload audio {post.post_id}: {e}")
                 raise
         
+        # Upload video with progress tracking
         try:
-            with open(final_video_path, 'rb') as video:
-                # Prepare send_video kwargs
-                send_kwargs = {
-                    'chat_id': target_chat,
-                    'video': video,
-                    'caption': caption,
-                    'message_thread_id': message_thread_id,
-                    'supports_streaming': True,
-                    'read_timeout': read_timeout,
-                    'write_timeout': write_timeout,
-                    'connect_timeout': connect_timeout,
-                    'pool_timeout': pool_timeout,
-                }
-                
-                message = await Bot.send_video(
-                    self.bot,
-                    **send_kwargs
+            file_name = os.path.basename(final_video_path)
+            
+            # Create upload task - we'll update it as time progresses
+            # Since python-telegram-bot doesn't provide progress callbacks, we'll estimate based on time
+            with progress_manager:
+                upload_task = progress_manager.add_task(
+                    "upload",
+                    total=file_size,
+                    operation=f"Uploading: {file_name}",
                 )
-                logger.info(f"Successfully uploaded video: {message.message_id}")
-                return message.message_id
+                
+                # Track upload progress in background
+                upload_complete = asyncio.Event()
+                
+                async def update_progress():
+                    """Update progress based on elapsed time and estimated upload time."""
+                    start_time = time.time()
+                    # Estimate upload speed: 5 Mbps
+                    estimated_duration = (file_size * 8) / (5 * 1024 * 1024)
+                    
+                    while not upload_complete.is_set():
+                        await asyncio.sleep(0.5)
+                        elapsed = time.time() - start_time
+                        # Estimate completed bytes based on elapsed time
+                        estimated_completed = min(file_size, int((elapsed / estimated_duration) * file_size))
+                        progress_manager.update(upload_task, completed=estimated_completed)
+                
+                # Start progress updater in background
+                progress_task = asyncio.create_task(update_progress())
+                
+                try:
+                    with open(final_video_path, 'rb') as video:
+                        send_kwargs = {
+                            'chat_id': target_chat,
+                            'video': video,
+                            'caption': caption,
+                            'message_thread_id': message_thread_id,
+                            'supports_streaming': True,
+                            'read_timeout': read_timeout,
+                            'write_timeout': write_timeout,
+                            'connect_timeout': connect_timeout,
+                            'pool_timeout': pool_timeout,
+                        }
+                        
+                        message = await Bot.send_video(
+                            self.bot,
+                            **send_kwargs
+                        )
+                        
+                        # Mark upload as complete
+                        upload_complete.set()
+                        await progress_task
+                        progress_manager.update(upload_task, completed=file_size)
+                        progress_manager.remove_task(upload_task)
+                        
+                        console.print(f"✓ Uploaded {file_name}", style="bold green")
+                        return message.message_id
+                        
+                except Exception as e:
+                    upload_complete.set()
+                    await progress_task
+                    progress_manager.remove_task(upload_task)
+                    logger.error(f"Failed to upload video {post.post_id}: {e}")
+                    raise
+                    
         except Exception as e:
             logger.error(f"Failed to upload video {post.post_id}: {e}")
             raise
