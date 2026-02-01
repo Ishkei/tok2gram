@@ -200,7 +200,9 @@ class TelegramUploader:
                 logger.info(f"File size {file_size_mb:.2f}MB > 50MB, but TELEGRAM_LOCAL_API is set. Proceeding.")
             else:
                 logger.warning(f"File size {file_size_mb:.2f}MB > 50MB and standard API in use. Compressing...")
-                final_video_path = self._compress_video(video_path)
+                # Run compression in a thread to avoid blocking the event loop
+                loop = asyncio.get_running_loop()
+                final_video_path = await loop.run_in_executor(None, self._compress_video, video_path)
                 # Recalculate size for logging/timeouts
                 file_size = os.path.getsize(final_video_path)
                 file_size_mb = file_size / (1024 * 1024)

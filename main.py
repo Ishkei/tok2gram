@@ -41,6 +41,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tok2gram")
 
+async def upload_worker(queue: asyncio.Queue, uploader: TelegramUploader, state: StateStore, chat_id: str, stats: dict):
+    while True:
+        try:
+            item = await queue.get()
+            if item is None:
+                queue.task_done()
+                break
+            
+            post, media = item
+            try:
+                logger.debug(f"DEBUG: media type = {type(media)}, value = {media}")
+                message_id = None
+                if post.kind == 'video' and 'video' in media:
+                    message_id = await uploader.upload_video(post, media['video'], chat_id=chat_id)
+                elif post.kind == 'slideshow' and 'images' in media:
+                    message_id = await uploader.upload_slideshow(post, media['images'], chat_id=chat_id)
+                
+                if message_id:
+                    state.mark_as_uploaded(post.post_id, chat_id, message_id)
+                    stats['uploaded'] += 1
+                    
+                    # Randomized delay between uploads to avoid Telegram flood limits
+                    delay = random.uniform(5, 10)
+                    await asyncio.sleep(delay)
+                    
+            except Exception as e:
+                logger.error(f"Failed to process upload for post {post.post_id}: {e}")
+            finally:
+                queue.task_done()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Worker error: {e}")
+
 async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
     username = creator_config['username']
     user_id = creator_config.get('user_id')
@@ -59,74 +93,81 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     
     cookie_content = cookie_manager.get_cookie_content()
     cookie_path = cookie_manager.get_current_cookie_path()
-    posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id)
     
-    if not posts and cookie_manager.cookie_files:
-        logger.warning(f"No posts found for {username}, attempting cookie rotation...")
-        cookie_manager.rotate()
-        cookie_content = cookie_manager.get_cookie_content()
-        cookie_path = cookie_manager.get_current_cookie_path()
-        posts = fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id)
+    loop = asyncio.get_running_loop()
+    
+    try:
+        # Run fetch_posts in executor as it is blocking
+        posts = await loop.run_in_executor(None, lambda: fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id))
+        
+        if not posts and cookie_manager.cookie_files:
+            logger.warning(f"No posts found for {username}, attempting cookie rotation...")
+            cookie_manager.rotate()
+            cookie_content = cookie_manager.get_cookie_content()
+            cookie_path = cookie_manager.get_current_cookie_path()
+            posts = await loop.run_in_executor(None, lambda: fetch_posts(username, depth=fetch_depth, cookie_path=cookie_path, cookie_content=cookie_content, user_id=user_id))
+    except Exception as e:
+        logger.error(f"Failed to fetch posts for {username}: {e}")
+        return
 
     sorted_posts = sort_posts_chronologically(posts)
     
-    new_posts_count = 0
+    stats = {'uploaded': 0}
     ip_blocked_detected = False
     
-    for post in sorted_posts:
-        if state.is_processed(post.post_id):
-            continue
-        
-        logger.info(f"New post found: {post.post_id} ({post.kind})")
-        
-        # Download
-        try:
-            cookie_path = cookie_manager.get_current_cookie_path()
-            media = download_post(post, "downloads", cookie_path=cookie_path, cookie_content=cookie_content)
-            if not media:
-                logger.error(f"Failed to download post {post.post_id}")
-                continue
-        except PostInaccessibleError as e:
-            logger.warning(f"Post {post.post_id} is inaccessible, skipping: {e}")
-            continue
-        except Exception as e:
-            error_str = str(e)
-            if "IP address is blocked" in error_str or "HTTP Error 403" in error_str or "403" in error_str:
-                logger.error(f"IP blocked for post {post.post_id}, skipping creator {username}")
-                # Mark creator for longer cooldown
-                state.mark_ip_blocked(username)
-                ip_blocked_detected = True
-                break  # Stop processing this creator
-            else:
-                logger.error(f"Failed to download post {post.post_id}: {e}")
+    # Initialize Queue and Worker for pipelined processing
+    queue = asyncio.Queue()
+    worker_task = asyncio.create_task(upload_worker(queue, uploader, state, chat_id, stats))
+    
+    try:
+        for post in sorted_posts:
+            if state.is_processed(post.post_id):
                 continue
             
-        state.record_download(post.post_id, post.creator, post.kind, post.url, post.created_at)
-        
-        # Upload
-        try:
-            logger.debug(f"DEBUG: media type = {type(media)}, value = {media}")
-            message_id = None
-            if post.kind == 'video' and 'video' in media:
-                message_id = await uploader.upload_video(post, media['video'], chat_id=chat_id)
-            elif post.kind == 'slideshow' and 'images' in media:
-                message_id = await uploader.upload_slideshow(post, media['images'], chat_id=chat_id)
+            logger.info(f"New post found: {post.post_id} ({post.kind})")
             
-            if message_id:
-                state.mark_as_uploaded(post.post_id, chat_id, message_id)
-                new_posts_count += 1
+            # Download (Non-blocking)
+            try:
+                # Refresh cookie path in case it changed
+                current_cookie_path = cookie_manager.get_current_cookie_path()
                 
-                # Randomized delay between uploads to avoid Telegram flood limits
-                delay = random.uniform(5, 10)
-                await asyncio.sleep(delay)
+                # Run download in executor
+                media = await loop.run_in_executor(None, lambda: download_post(post, "downloads", cookie_path=current_cookie_path, cookie_content=cookie_content))
                 
-        except Exception as e:
-            logger.error(f"Failed to process upload for post {post.post_id}: {e}")
-
+                if not media:
+                    logger.error(f"Failed to download post {post.post_id}")
+                    continue
+                    
+                # Queue for upload (this will not block unless queue is full, which is default infinite)
+                await queue.put((post, media))
+                
+            except PostInaccessibleError as e:
+                logger.warning(f"Post {post.post_id} is inaccessible, skipping: {e}")
+                continue
+            except Exception as e:
+                error_str = str(e)
+                if "IP address is blocked" in error_str or "HTTP Error 403" in error_str or "403" in error_str:
+                    logger.error(f"IP blocked for post {post.post_id}, skipping creator {username}")
+                    # Mark creator for longer cooldown
+                    state.mark_ip_blocked(username)
+                    ip_blocked_detected = True
+                    break  # Stop processing this creator
+                else:
+                    logger.error(f"Failed to download post {post.post_id}: {e}")
+                    continue
+        
+        # Wait for all uploads to complete
+        await queue.join()
+        
+    finally:
+        # Stop worker
+        await queue.put(None)
+        await worker_task
+    
     if ip_blocked_detected:
         logger.warning(f"Creator {username} marked as IP-blocked. Will retry after cooldown period.")
     
-    logger.info(f"Finished processing {username}. {new_posts_count} new posts uploaded.")
+    logger.info(f"Finished processing {username}. {stats['uploaded']} new posts uploaded.")
 
 async def main():
     # Startup banner (print only when running as a program, not on import)
