@@ -217,6 +217,7 @@ class TelegramUploader:
                         "ffmpeg", "-y", "-i", input_path,
                         "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
                         "-pass", "1", "-an",  # -an = no audio in pass 1
+                        "-preset", "ultrafast",
                         "-f", "mp4", "/dev/null"
                     ]
                     
@@ -254,6 +255,7 @@ class TelegramUploader:
                         "-c:v", "libx264", "-b:v", f"{target_video_bitrate_k}k",
                         "-pass", "2",
                         "-c:a", "aac", "-b:a", f"{audio_bitrate_k}k",
+                        "-preset", "ultrafast",
                         "-movflags", "+faststart",
                         output_path
                     ]

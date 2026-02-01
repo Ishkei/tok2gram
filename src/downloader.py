@@ -236,7 +236,7 @@ def _transcode_to_telegram_mp4(input_path: str) -> str:
         "-pix_fmt",
         "yuv420p",
         "-preset",
-        "veryfast",
+        "ultrafast",
         "-crf",
         "23",
         "-c:a",
