@@ -172,6 +172,7 @@ class TelegramUploader:
         Returns path to compressed video (or original if compression fails/unnecessary).
         """
         attempt = 0
+        last_compressed_size_mb = None
         
         # Calculate initial CRF based on file size for better targeting
         file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
@@ -262,16 +263,24 @@ class TelegramUploader:
                     
                     # Verify the compressed file is actually under 50MB
                     if new_size_mb >= 50:
+                        # Check if compression has plateaued (same size as last attempt)
+                        if last_compressed_size_mb and abs(new_size_mb - last_compressed_size_mb) < 1.0:
+                            logger.warning(f"Compression plateaued at {new_size_mb:.2f}MB (no improvement from last attempt)")
+                            logger.warning("Cannot compress below 50MB limit - returning original file")
+                            return input_path
+                        
+                        last_compressed_size_mb = new_size_mb
                         logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying with higher CRF...")
+                        
                         # Increase CRF more aggressively for large files
                         if new_size_mb > 150:
-                            current_crf = min(45, current_crf + 4)  # Big jump for very large results
+                            current_crf = min(51, current_crf + 4)  # Big jump for very large results
                         elif new_size_mb > 100:
-                            current_crf = min(45, current_crf + 3)  # Moderate jump
+                            current_crf = min(51, current_crf + 3)  # Moderate jump
                         elif new_size_mb > 70:
-                            current_crf = min(45, current_crf + 3)  # Moderate jump
+                            current_crf = min(51, current_crf + 3)  # Moderate jump
                         else:
-                            current_crf = min(45, current_crf + 2)  # Small jump
+                            current_crf = min(51, current_crf + 2)  # Small jump
                         os.remove(output_path)
                         continue
                     
@@ -284,7 +293,7 @@ class TelegramUploader:
                 if attempt >= max_attempts:
                     return input_path
                 # Increase CRF and retry
-                current_crf = min(45, current_crf + 3)
+                current_crf = min(51, current_crf + 3)
 
         return input_path
 
