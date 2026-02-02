@@ -5,3 +5,5 @@ tenacity
 requests
 pytest-asyncio
 gallery-dl
+rich
+

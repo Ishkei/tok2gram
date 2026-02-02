@@ -1,0 +1,6 @@
+[
+  {
+    "type": "sqlite",
+    "path": "/home/soto/tok2gram/data/state.db"
+  }
+]
