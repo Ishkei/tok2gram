@@ -1,234 +1,371 @@
-# Tok2Gram Termux Android Setup Guide
+# Tok2Gram Termux Android Setup Guide for Beginners
 
-## Overview
+## What is This Guide?
 
-This guide explains how to set up and run Tok2Gram on Android using Termux.
+Hello! This guide will help you set up **Tok2Gram** on your Android phone using an app called **Termux**. Tok2Gram is a tool that automatically monitors TikTok creators and reposts their videos to Telegram channels.
 
-## Prerequisites
+Don't worry if you're new to this - we'll explain everything step by step, like you're learning it for the first time. We'll use simple words and tell you exactly what to do.
 
-- Android device (7.0 or higher recommended)
+## What You Need Before Starting
 
-- At least 500MB free storage
+Before we begin, make sure you have:
 
-- Stable internet connection
+- **An Android phone** (version 7.0 or newer is best)
+- **At least 500MB of free space** on your phone
+- **A good internet connection** (Wi-Fi is recommended)
+
+If you don't have these, you might run into problems later.
+
+## Quick Start (For Experienced Users)
+
+If you're comfortable with commands, you can use this quick setup script. Otherwise, skip to the detailed steps below.
+
+**Save this as `setup-termux.sh` and run it:**
+
+```bash
+#!/bin/bash
+set -e
+
+echo "Installing Termux packages..."
+pkg update -y && pkg upgrade -y
+pkg install -y python ffmpeg wget curl git libffi openssl clang ca-certificates
+
+echo "Creating virtual environment..."
+python -m venv ~/tok2gram/venv
+source ~/tok2gram/venv/bin/activate
+pip install --upgrade pip
+
+echo "Installing Python dependencies..."
+pip install yt-dlp python-telegram-bot==20.* PyYAML tenacity requests pytest-asyncio gallery-dl rich
+
+echo "Setting up storage access..."
+termux-setup-storage
+
+echo "Creating required directories..."
+mkdir -p ~/tok2gram/data/{cookies,downloads,logs}
+
+echo "Setup complete!"
+echo "Next steps:"
+echo "1. Get Tok2Gram files to ~/tok2gram"
+echo "2. Copy creators-template.yaml to creators.yaml"
+echo "3. Edit config.yaml and creators.yaml with your settings"
+echo "4. Run: cd ~/tok2gram && source venv/bin/activate && python main.py"
+```
 
 ## Step 1: Install Termux
 
-1. **Download Termux from F-Droid** (recommended):
+Termux is like a mini computer on your phone. It lets you run commands just like on a computer.
 
-- Visit [https://f-droid.org/packages/com.termux](https://f-droid.org/packages/com.termux)
+### Option 1: Download from F-Droid (Easiest)
 
-- Download the latest APK
+1. **What is F-Droid?** It's a free app store for Android, like Google Play but for open-source apps.
 
-- Install it (enable "Unknown sources" in Android settings if needed)
+2. **Install F-Droid first:**
+   - Go to [https://f-droid.org](https://f-droid.org) on your phone's browser
+   - Download and install the F-Droid app
 
- 
+3. **Get Termux:**
+   - Open F-Droid
+   - Search for "Termux"
+   - Tap "Install"
 
-> ⚠️ Avoid the Play Store version - it's outdated and no longer maintained
+4. **Allow unknown apps if asked:**
+   - Go to your phone's Settings > Security
+   - Turn on "Unknown sources" or "Install unknown apps"
+   - Allow F-Droid to install apps
 
-2. **Alternative: Download from GitHub**:
+> **Important:** Don't use the Termux from Google Play Store - it's old and doesn't work well!
 
-- Visit [https://github.com/termux/termux-app/releases](https://github.com/termux/termux-app/releases)
+### Option 2: Download Directly from GitHub
 
-- Download the latest `termux-app_*_debug.apk` or `termux-app_*_release.apk`
+If F-Droid doesn't work:
 
-- Install the APK
+1. Go to [https://github.com/termux/termux-app/releases](https://github.com/termux/termux-app/releases) on your phone
 
-## Step 2: Update Termux
+2. Download the latest file that ends with `.apk` (like `termux-app_118_debug.apk`)
 
-Open Termux and run:
+3. Open the downloaded file to install it
 
-```bash
-pkg update && pkg upgrade -y
-pkg install coreutils curl wget git openssl-tool
-```
+4. Allow installation from unknown sources if prompted
 
-## Step 3: Install System Dependencies
+## Step 2: First Time Setup in Termux
 
-Tok2Gram requires these system packages for yt-dlp, gallery-dl, and other dependencies:
+1. **Open Termux** - it looks like a black screen with white text
+
+2. **Update everything:**
+   ```bash
+   pkg update && pkg upgrade -y
+   ```
+   *What this does:* Updates Termux to the latest version and installs basic tools.
+
+3. **Install essential tools:**
+   ```bash
+   pkg install coreutils curl wget git openssl-tool
+   ```
+   *What this does:* Adds tools we need for downloading and managing files.
+
+## Step 3: Install Required Software
+
+Tok2Gram needs special programs to download videos and talk to Telegram.
 
 ```bash
 pkg install -y python ffmpeg wget curl git libffi openssl clang ca-certificates
 ```
 
-## Step 4: Install Python and Create Virtual Environment
+*What this does:*
+- **python**: Programming language for Tok2Gram
+- **ffmpeg**: Tool for video processing
+- **Others**: Helper tools for security and downloading
+
+## Step 4: Set Up Python Environment
+
+Python is the language Tok2Gram is written in. We need to set it up properly.
 
 ```bash
-# Verify Python version (should be 3.11+)
+# Check if Python works
 python --version
 
-# Upgrade pip
+# Update the tool that installs Python packages
 pip install --upgrade pip
 
-# Create virtual environment in your project directory
+# Create a special folder for Tok2Gram's Python setup
 python -m venv ~/tok2gram/venv
 ```
 
-## Step 5: Transfer Tok2Gram Files
+*What this does:* Creates a "virtual environment" so Tok2Gram's Python stuff doesn't mix with other apps.
 
-### Option A: Git Clone (Recommended)
+## Step 5: Get the Tok2Gram Files
+
+You need to get the Tok2Gram program files onto your phone.
+
+### Easiest Way: Download from GitHub
 
 ```bash
+# Go to your home folder
 cd ~
 
+# Download Tok2Gram (replace 'yourusername' with the actual GitHub username)
 git clone https://github.com/yourusername/tok2gram.git
 
+# Go into the Tok2Gram folder
 cd tok2gram
 ```
 
-### Option B: From Local Device
+*What this does:* Downloads all the Tok2Gram files from the internet.
 
-1. Upload files to cloud storage (Google Drive, Dropbox)
+### Alternative: Copy from Your Computer
 
-2. Download in Termux:
+1. **On your computer:** Zip the tok2gram folder
+
+2. **Upload the zip file** to Google Drive or Dropbox
+
+3. **On your phone in Termux:**
+   ```bash
+   # Set up file access
+   termux-setup-storage
+
+   # Copy the file (change the path to where you put it)
+   cp ~/storage/shared/Download/tok2gram.zip .
+
+   # Unzip it
+   unzip tok2gram.zip
+   ```
+
+## Step 6: Install Tok2Gram's Python Packages
+
+Now we install all the special libraries Tok2Gram needs.
 
 ```bash
-cd ~
-
-termux-setup-storage
-
-cp ~/storage/shared/path/to/tok2gram.zip .
-
-unzip tok2gram.zip
-```
-
-### Option C: Using ADB
-
-```bash
-adb push tok2gram /data/data/com.termux/files/home/tok2gram
-```
-
-## Step 6: Install Python Dependencies
-
-```bash
+# Go to Tok2Gram folder
 cd ~/tok2gram
 
+# Activate our Python environment
 source venv/bin/activate
 
+# Update installer
 pip install --upgrade pip
 
-# Install all dependencies
-pip install yt-dlp python-telegram-bot==20.* PyYAML tenacity requests pytest-asyncio gallery-dl
+# Install all needed packages
+pip install yt-dlp python-telegram-bot==20.* PyYAML tenacity requests pytest-asyncio gallery-dl rich
 ```
 
-## Step 7: Configure Storage Access
+*What these packages do:*
+- **yt-dlp**: Downloads videos from TikTok
+- **python-telegram-bot**: Sends messages to Telegram
+- **PyYAML**: Reads configuration files
+- **Others**: Help with errors, downloads, and testing
+
+## Step 7: Set Up File Access
+
+Allow Termux to access your phone's files.
 
 ```bash
 termux-setup-storage
 ```
 
-This creates symlinks in `~/storage/`:
+*What this does:* Creates shortcuts to your phone's storage so Tok2Gram can save downloaded videos.
 
-- `~/storage/downloads/` - Downloads folder
+You'll see folders like:
+- `~/storage/downloads/` - Your phone's Downloads folder
+- `~/storage/shared/` - Your phone's main storage
 
-- `~/storage/shared/` - Internal storage
+## Step 8: Create Required Directories
 
-## Step 8: Configure Tok2Gram
-
-1. **Copy configuration template**:
+Tok2Gram needs some folders to store data, logs, and cookies.
 
 ```bash
-cp config.yaml config.yaml.example
-
-cp creators.yaml creators.yaml.example
+# Create the necessary directories
+mkdir -p data/{cookies,downloads,logs}
 ```
 
-2. **Edit configuration**:
+*What this creates:*
+- `data/cookies/` - For TikTok session cookies
+- `data/downloads/` - For temporarily downloaded videos
+- `data/logs/` - For application log files
+
+## Step 9: Configure Tok2Gram
+
+Set up your personal settings for TikTok and Telegram.
+
+### 1. Set up the configuration files
+
+The config.yaml file should already exist. For creators, copy the template:
+
+```bash
+# Copy the creators template (config.yaml already exists)
+cp creators-template.yaml creators.yaml
+```
+
+### 2. Set up your Telegram bot
+
+You need a Telegram bot token. Here's how to get one:
+
+1. Open Telegram and search for "@BotFather"
+2. Type `/newbot` and follow the instructions
+3. Copy the token (it looks like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
+
+Edit the config file:
 
 ```bash
 nano config.yaml
 ```
 
-Set your Telegram bot token:
+Find the telegram section and update the bot_token:
 
 ```yaml
-bot_token: "YOUR_ACTUAL_BOT_TOKEN"
+telegram:
+  bot_token: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 ```
 
-3. **Edit creators**:
+*How to use nano:* Type your changes, then press Ctrl+X, then Y, then Enter to save.
+
+### 3. Add your TikTok creators and Telegram channels
 
 ```bash
 nano creators.yaml
 ```
 
-Add your TikTok creators and Telegram channels.
+Add something like:
 
-4. **Set up cookies** (optional but recommended):
+```yaml
+creators:
+  - username: "tiktok_creator_username"
+    chat_id: "-1001234567890"
+```
 
-- Create `data/cookies/` directory
+### 4. Set up TikTok cookies (Optional but helps)
 
-- Place TikTok session cookies (sid_tt files) there
+Cookies help Tok2Gram access private or restricted TikTok content.
 
-## Step 9: Test the Program
+1. Create the cookies folder:
+   ```bash
+   mkdir -p data/cookies
+   ```
+
+2. Get cookies from your browser (search online for "export TikTok cookies")
+
+3. Save them as `sid_tt.txt` in the `data/cookies/` folder
+
+## Step 10: Test That Everything Works
+
+Let's make sure Tok2Gram runs without errors.
 
 ```bash
+# Go to Tok2Gram folder
 cd ~/tok2gram
 
+# Activate Python environment
 source venv/bin/activate
 
+# Run Tok2Gram
 python main.py
 ```
 
-The program should start monitoring TikTok creators. Use `Ctrl+C` to stop.
+*What should happen:* Tok2Gram starts and shows messages about checking for new videos. Press Ctrl+C to stop it.
 
-## Step 10: Run in Background
+If you see errors, check the troubleshooting section below.
 
-### Option A: Using nohup + termux-wake-lock
+## Step 11: Run Tok2Gram in the Background
 
-```bash
-termux-wake-lock
+You don't want to keep Termux open all the time. Here's how to run it hidden.
 
-nohup python ~/tok2gram/main.py > output.log 2>&1 &
-```
+### Best Way: Use tmux (Recommended)
 
-### Option B: Using tmux (Recommended)
+tmux keeps programs running even when you close Termux.
 
 ```bash
 # Install tmux
 pkg install tmux
 
-# Create new session
-
+# Start a new tmux session called "tok2gram"
 tmux new-session -s tok2gram
 
-# Inside tmux, run:
+# Inside tmux, run these commands:
+termux-wake-lock
+python main.py
 
-termux-wake-lock && python main.py
+# To leave tmux running: Press Ctrl+B, then D
 
-# Detach from tmux: Ctrl+B, then D
-
-# Reattach: tmux attach-session -t tok2gram
+# To come back later: tmux attach-session -t tok2gram
 ```
 
-### Option C: Using termux-services
+### Simpler Way: nohup
 
 ```bash
-pkg install termux-services
+# Prevent Android from stopping the app
+termux-wake-lock
 
-sv-enable cron # or other service manager
+# Run in background and save output to a file
+nohup python ~/tok2gram/main.py > output.log 2>&1 &
 ```
 
-## Step 11: Auto-Start on Boot
+## Step 12: Make It Start Automatically
 
-Create a startup script:
+Want Tok2Gram to start when your phone turns on?
 
 ```bash
+# Create the startup folder
 mkdir -p ~/.termux/boot
 
+# Create the startup script
 nano ~/.termux/boot/tok2gram.sh
 ```
 
-Add to `~/.termux/boot/tok2gram.sh`:
+Put this in the file:
 
 ```bash
 #!/bin/bash
 
+# Prevent Android from killing the process
 termux-wake-lock
 
+# Go to Tok2Gram folder
 cd ~/tok2gram
 
+# Activate Python
 source venv/bin/activate
 
+# Start Tok2Gram
 python main.py
 ```
 
@@ -238,126 +375,141 @@ Make it executable:
 chmod +x ~/.termux/boot/tok2gram.sh
 ```
 
-## Common Issues & Solutions
+Now Tok2Gram will start when Termux starts!
 
-| Problem | Solution |
-|---------|----------|
-| pip build errors | `pkg install clang python-dev` |
-| ffmpeg missing for video processing | `pkg install ffmpeg` |
-| SSL certificate errors | `pkg install ca-certificates && pip install --certificates` |
-| Process killed by Android | Use `termux-wake-lock` + F-Droid Termux |
-| Storage permission denied | Run `termux-setup-storage` again |
-| Cannot download TikTok videos | Ensure cookies are set in `data/cookies/` |
-| Telegram API errors | Verify bot token in config.yaml |
+## Common Problems and How to Fix Them
 
-## Quick Setup Script
+### "Command not found" errors
+**Problem:** When you type a command, it says "command not found"
 
-Save this as `setup-termux.sh` and run it:
+**Solutions:**
+- Make sure you're typing it exactly right (copy-paste if possible)
+- Try running `pkg install coreutils` first
+- Restart Termux
 
-```bash
-#!/bin/bash
+### Python or pip doesn't work
+**Problem:** `python --version` or `pip` gives errors
 
-set -e
+**Solutions:**
+- Run `pkg install python` again
+- Make sure you're in the right folder
+- Try `python3` instead of `python`
 
-echo "Installing Termux packages..."
+### Can't download videos
+**Problem:** Tok2Gram can't get TikTok videos
 
-pkg update -y && pkg upgrade -y
+**Solutions:**
+- Check your internet connection
+- Add TikTok cookies (see Step 8.4)
+- Make sure the TikTok username is correct
+- Run `pkg install ffmpeg` again
 
-pkg install -y python ffmpeg wget curl git libffi openssl clang ca-certificates
+### Telegram errors
+**Problem:** "Invalid bot token" or can't send messages
 
-echo "Creating virtual environment..."
+**Solutions:**
+- Double-check your bot token in config.yaml
+- Make sure the bot is added as admin to your Telegram channel
+- Test the bot token manually first
 
-python -m venv ~/tok2gram/venv
+### App gets killed by Android
+**Problem:** Tok2Gram stops running randomly
 
-source ~/tok2gram/venv/bin/activate
+**Solutions:**
+- Always use `termux-wake-lock` when running
+- Use tmux to keep it running
+- Close other apps to free up memory
+- Use the F-Droid version of Termux
 
-pip install --upgrade pip
+### Storage permission denied
+**Problem:** Can't access files
 
-echo "Installing Python dependencies..."
+**Solutions:**
+- Run `termux-setup-storage` again
+- Grant storage permissions to Termux in Android settings
+- Restart your phone
 
-pip install yt-dlp python-telegram-bot==20.* PyYAML tenacity requests pytest-asyncio gallery-dl
+### Build/compilation errors
+**Problem:** Installing packages fails with build errors
 
-echo "Setting up storage access..."
+**Solutions:**
+- Run `pkg install clang python-dev` first
+- Update Termux: `pkg update && pkg upgrade`
+- Try installing one package at a time
 
-termux-setup-storage
+### SSL/certificate errors
+**Problem:** Connection errors when downloading
 
-echo "Setup complete!"
+**Solutions:**
+- Run `pkg install ca-certificates`
+- Try `pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org [package]`
 
-echo "Next steps:"
+## Tips for Better Performance
 
-echo "1. Clone or transfer Tok2Gram files to ~/tok2gram"
+1. **Use tmux** - It keeps your session alive even if you close Termux
 
-echo "2. Configure config.yaml and creators.yaml"
+2. **Use termux-wake-lock** - Prevents Android from stopping Tok2Gram to save battery
 
-echo "3. Run: cd ~/tok2gram && source venv/bin/activate && python main.py"
+3. **Check your config** - Adjust how often it checks for new videos to save battery
+
+4. **Monitor logs** - Check `output.log` for errors and what's happening
+
+5. **Restart regularly** - Set up a cron job to restart Tok2Gram every few hours
+
+## How Files Are Organized on Your Phone
+
+After setup, your files will look like this:
+
+```
+/data/data/com.termux/files/home/  (Termux's home folder)
+
+├── tok2gram/                     (Main Tok2Gram folder)
+│   ├── venv/                     (Python environment)
+│   ├── main.py                   (The main program)
+│   ├── config.yaml               (Your settings)
+│   ├── creators.yaml             (TikTok creators list)
+│   ├── data/                     (Data storage)
+│   │   ├── cookies/              (TikTok login cookies)
+│   │   ├── downloads/            (Downloaded videos)
+│   │   ├── logs/                 (Application log files)
+│   │   └── state.db              (Remembers what was posted)
+│   └── ...
+│
+└── storage/                      (Shortcuts to phone storage)
+    ├── downloads/                (Phone's Downloads folder)
+    └── shared/                   (Phone's main storage)
 ```
 
-## Performance Tips
+## Security Tips
 
-1. **Use tmux** - Keeps session alive when you close Termux
+1. **Don't share your config files** - They contain your bot token
 
-2. **termux-wake-lock** - Prevents Android from killing the process
+2. **Use environment variables** for secrets:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your_secret_token_here"
+   ```
 
-3. **Adjust config.yaml** - Set appropriate check intervals to reduce battery usage
+3. **Keep Termux updated** - Run `pkg update` regularly for security fixes
 
-4. **Monitor logs** - Check `output.log` for errors
+4. **Be careful with permissions** - Only install packages you trust
 
-5. **Schedule restarts** - Use cron to restart periodically
+## Words You Might Not Know (Glossary)
 
-## File Structure on Android
+- **APK**: Android app file (like .exe for Windows)
+- **F-Droid**: Alternative app store for free/open-source apps
+- **Git/GitHub**: System for sharing and downloading code
+- **Virtual Environment**: Isolated Python setup for one project
+- **Bot Token**: Secret code that lets programs control Telegram bots
+- **Cookies**: Small files that remember login info for websites
+- **tmux**: Tool that lets programs run in the background
+- **nohup**: Command that prevents programs from stopping when you close the terminal
 
-```
-/data/data/com.termux/files/home/
+## Need Help?
 
-├── tok2gram/
+If you get stuck:
 
-│ ├── venv/ # Virtual environment
+- **Termux Wiki**: [https://wiki.termux.com](https://wiki.termux.com) - Official help
+- **Termux GitHub**: [https://github.com/termux/termux-app](https://github.com/termux/termux-app) - Report bugs
+- **Tok2Gram Issues**: Check the project repository for known problems
 
-│ ├── main.py # Entry point
-
-│ ├── config.yaml # Configuration
-
-│ ├── creators.yaml # Creator list
-
-│ ├── data/
-
-│ │ ├── cookies/ # TikTok cookies
-
-│ │ ├── downloads/ # Downloaded media
-
-│ │ └── state.db # SQLite state database
-
-│ └── ...
-
-└── storage/
-
-├── downloads/ # Android downloads
-
-└── shared/ # Internal storage
-```
-
-## Security Notes
-
-1. **Never commit config.yaml** with real tokens to git
-
-2. **Use environment variables** for sensitive data:
-
-```bash
-export TELEGRAM_BOT_TOKEN="your_token_here"
-```
-
-3. **Keep Termux updated** to get security patches
-
-4. **Review permissions** before installing additional packages
-
-## Support
-
-- Termux Wiki: [https://wiki.termux.com](https://wiki.termux.com)
-
-- Termux GitHub: [https://github.com/termux/termux-app](https://github.com/termux/termux-app)
-
-- Tok2Gram Issues: Report bugs on the project repository
-
----
-
-**Note**: This guide assumes you have basic familiarity with command-line interfaces. If you encounter issues, check the Termux wiki or community forums for additional help.
+Remember: Take it slow, double-check your typing, and don't be afraid to ask for help. You've got this! 🚀

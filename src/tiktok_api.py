@@ -163,6 +163,10 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                 if "IP address is blocked" in msg or "HTTP Error 403" in msg or "403" in msg:
                     logger.error(f"IP blocked while fetching posts for {username}: {msg}")
                     raise
+                # Handle secondary user ID extraction error - likely needs cookies or account is restricted
+                if "Unable to extract secondary user ID" in msg:
+                    logger.warning(f"TikTok secondary user ID extraction failed for {username}. Account might be restricted or requires cookies.")
+                    raise
                 # For non-429 errors or after exhausting retries, re-raise.
                 raise
 
