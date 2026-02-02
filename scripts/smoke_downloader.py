@@ -3,8 +3,8 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.tiktok.downloader import download_video
-from src.tiktok.fetcher import Post
+from src.downloader import download_video
+from src.tiktok_api import Post
 
 logging.basicConfig(level=logging.INFO)
 

@@ -1,16 +1,16 @@
 import logging
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Any
 from telegram import Bot, InputMediaPhoto, InputMediaVideo
 from telegram.constants import ParseMode
 try:
-    from tiktok.fetcher import Post
+    from src.tiktok_api import Post
 except ImportError:
     # Fallback for test imports
     import sys
     import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from tiktok.fetcher import Post
+    from tiktok_api import Post
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("tok2gram.telegram")
@@ -73,14 +73,28 @@ class TelegramUploader:
         caption = self._format_caption(post)
         logger.info(f"Uploading slideshow for post {post.post_id} to {target_chat} (thread: {message_thread_id}) ({len(image_paths)} images)")
 
-        media = []
-        for i, path in enumerate(image_paths):
-            if i == 0:
-                media.append(InputMediaPhoto(media=open(path, 'rb'), caption=caption))
-            else:
-                media.append(InputMediaPhoto(media=open(path, 'rb')))
+        media: List[InputMediaPhoto] = []
+        open_files: List[Any] = []
 
         try:
+            for i, path in enumerate(image_paths):
+                try:
+                    f = open(path, "rb")
+                except Exception as e:
+                    logger.error(f"Failed to open image file {path}: {e}")
+                    for of in open_files:
+                        try:
+                            of.close()
+                        except Exception:
+                            pass
+                    raise
+
+                open_files.append(f)
+                if i == 0:
+                    media.append(InputMediaPhoto(media=f, caption=caption))
+                else:
+                    media.append(InputMediaPhoto(media=f))
+
             messages = await self.bot.send_media_group(
                 chat_id=target_chat,
                 media=media,
@@ -90,17 +104,12 @@ class TelegramUploader:
                 connect_timeout=60,
                 pool_timeout=60
             )
-            # Close file handles
-            for m in media:
-                if hasattr(m.media, 'close'):
-                    m.media.close()
 
             logger.info(f"Successfully uploaded slideshow: {[m.message_id for m in messages]}")
             return messages[0].message_id
-        except Exception as e:
-            # Ensure file handles are closed even on error
-            for m in media:
-                if hasattr(m.media, 'close'):
-                    m.media.close()
-            logger.error(f"Failed to upload slideshow {post.post_id}: {e}")
-            raise
+        finally:
+            for f in open_files:
+                try:
+                    f.close()
+                except Exception as e:
+                    logger.warning(f"Error closing slideshow image file: {e}")

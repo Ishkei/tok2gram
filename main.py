@@ -5,6 +5,9 @@ import time
 import random
 import os
 import json
+import signal
+from typing import Optional
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -16,6 +19,25 @@ from src.downloader import download_post, PostInaccessibleError
 from src.core.state import StateStore
 from src.telegram_uploader import TelegramUploader
 from src.cookie_manager import CookieManager
+
+# Global shutdown event for graceful shutdown
+_shutdown_event: Optional[asyncio.Event] = None
+
+
+def _signal_handler(signum, frame):
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    if _shutdown_event:
+        _shutdown_event.set()
+
+
+def _setup_signal_handlers():
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda s=sig: _signal_handler(s, None))
+        except NotImplementedError:
+            # Not supported on this platform, fallback to signal.signal
+            signal.signal(sig, _signal_handler)
 
 
 def get_retry_delay(attempt: int, is_ip_blocked: bool = False) -> float:
@@ -133,7 +155,7 @@ async def resume_incomplete_uploads(username: str, state: StateStore, uploader: 
     
     return resumed_count
 
-async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
+async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager, shutdown_event: asyncio.Event):
     username = creator_config['username']
     user_id = creator_config.get('user_id')
     chat_id = creator_config.get('chat_id') or settings.get('telegram_chat_id')
@@ -184,6 +206,11 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
             logger.info(f"Resumed {resumed} incomplete upload(s) for {username}")
         
         for post in sorted_posts:
+            # Check shutdown signal
+            if shutdown_event.is_set():
+                logger.info(f"Shutdown signal received, stopping processing {username}")
+                break
+            
             if state.is_processed(post.post_id):
                 continue
             
@@ -238,9 +265,17 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     logger.info(f"Finished processing {username}. {stats['uploaded']} new posts uploaded.")
 
 async def main():
+    global _shutdown_event
+    
     # Startup banner (print only when running as a program, not on import)
     print(f"{BOT_NAME} v{BOT_VERSION}")
     logger.info("Starting Tok2gram...")
+    
+    # Initialize shutdown event
+    _shutdown_event = asyncio.Event()
+    
+    # Setup signal handlers
+    _setup_signal_handlers()
     
     try:
         config = load_config("config.yaml")
@@ -258,6 +293,11 @@ async def main():
         cookie_manager = CookieManager("cookies")
         
         for creator in creators:
+            # Check shutdown signal before processing each creator
+            if _shutdown_event.is_set():
+                logger.info("Shutdown signal received, stopping processing...")
+                break
+                
             username = creator['username']
             
             # Skip creators that are currently IP-blocked
@@ -265,7 +305,12 @@ async def main():
                 logger.info(f"Skipping {username} - IP blocked (cooldown)")
                 continue
             
-            await process_creator(creator, settings, state, uploader, cookie_manager)
+            await process_creator(creator, settings, state, uploader, cookie_manager, _shutdown_event)
+            
+            # Check shutdown signal before delay
+            if _shutdown_event.is_set():
+                logger.info("Shutdown signal received, stopping...")
+                break
             
             # Delay between creators to avoid TikTok blocks
             # Use longer delay if the previous creator was IP-blocked
@@ -277,11 +322,38 @@ async def main():
                 max_delay = settings.get('delay_between_creators_seconds_max', 60)
                 delay = random.uniform(min_delay, max_delay)
                 logger.info(f"Waiting {delay:.1f}s before next creator...")
-            await asyncio.sleep(delay)
+            
+            # Wait with shutdown check
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                pass  # Timeout means delay completed normally
             
     except Exception as e:
         logger.error(f"Execution failed: {e}")
         sys.exit(1)
+    finally:
+        logger.info("StateStore connections closed via context managers.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Register handlers using signal.signal() for non-asyncio fallback
+    def fallback_signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        if _shutdown_event:
+            _shutdown_event.set()
+    
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, fallback_signal_handler)
+        except (OSError, ValueError):
+            pass  # Signal not supported on this platform
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, shutting down...")
+        if _shutdown_event:
+            _shutdown_event.set()
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)

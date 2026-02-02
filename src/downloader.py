@@ -382,13 +382,11 @@ def download_video(
         },
     }
     
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    if cookie_path and os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    elif cookie_content:
+        ydl_opts.setdefault('http_headers', {})
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     try:
         # Cast ydl_opts to ``Dict[str, Any]`` to satisfy static type checkers.
@@ -548,13 +546,11 @@ def _download_slideshow_fallback(post: Post, base_download_path: str, cookie_pat
         }
     }
 
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    if cookie_path and os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    elif cookie_content:
+        ydl_opts.setdefault('http_headers', {})
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     try:
         info = None

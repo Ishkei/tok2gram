@@ -3,7 +3,8 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.tiktok.fetcher import fetch_posts, Post, sort_posts_chronologically
+from src.tiktok_api import fetch_posts, Post, sort_posts_chronologically
+
 
 def test_post_model():
     post = Post(
@@ -17,7 +18,8 @@ def test_post_model():
     assert post.post_id == "123"
     assert post.kind == "video"
 
-@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
+
+@patch('src.tiktok_api.yt_dlp.YoutubeDL')
 def test_fetch_posts_success(mock_ytdl):
     # Mock yt-dlp response
     mock_instance = mock_ytdl.return_value.__enter__.return_value
@@ -25,21 +27,26 @@ def test_fetch_posts_success(mock_ytdl):
         'entries': [
             {
                 'id': 'post1',
-                'webpage_url': 'url1',
+                'webpage_url': 'https://tiktok.com/@user/video/123',
                 'description': 'caption1',
                 'timestamp': 1600000000,
                 'uploader': 'creator1',
-                '_type': 'video' # simplified
+                '_type': 'video'  # simplified
             }
         ]
     }
     
-    posts = fetch_posts("creator1", depth=10)
-    assert len(posts) == 1
-    assert posts[0].post_id == 'post1'
-    assert posts[0].creator == 'creator1'
+    # Mock _probe_kind to return video
+    with patch('src.tiktok_api._probe_kind') as mock_probe:
+        mock_probe.return_value = 'video'
+        
+        posts = fetch_posts("creator1", depth=10)
+        assert len(posts) == 1
+        assert posts[0].post_id == 'post1'
+        assert posts[0].creator == 'creator1'
 
-@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
+
+@patch('src.tiktok_api.yt_dlp.YoutubeDL')
 def test_fetch_posts_slideshow_detection(mock_ytdl):
     # Mock yt-dlp response for slideshow
     mock_instance = mock_ytdl.return_value.__enter__.return_value
@@ -47,27 +54,32 @@ def test_fetch_posts_slideshow_detection(mock_ytdl):
         'entries': [
             {
                 'id': 'slide1',
-                'webpage_url': 'url1',
+                'webpage_url': 'https://tiktok.com/@user/photo/123',
                 'description': 'caption1',
                 'timestamp': 1600000000,
-                '_type': 'playlist' # yt-dlp flat-extract often marks slideshows as playlist
+                '_type': 'playlist'  # yt-dlp flat-extract often marks slideshows as playlist
             },
             {
                 'id': 'slide2',
-                'webpage_url': 'url2',
+                'webpage_url': 'https://tiktok.com/@user/photo/124',
                 'description': 'caption2',
                 'timestamp': 1600000500,
-                'type': 'slideshow' # some versions might use 'type'
+                'type': 'slideshow'  # some versions might use 'type'
             }
         ]
     }
     
-    posts = fetch_posts("creator1", depth=10)
-    assert len(posts) == 2
-    assert posts[0].kind == 'slideshow'
-    assert posts[1].kind == 'slideshow'
+    # Mock _probe_kind to return slideshow
+    with patch('src.tiktok_api._probe_kind') as mock_probe:
+        mock_probe.return_value = 'slideshow'
+        
+        posts = fetch_posts("creator1", depth=10)
+        assert len(posts) == 2
+        assert posts[0].kind == 'slideshow'
+        assert posts[1].kind == 'slideshow'
 
-@patch('src.tiktok.fetcher.yt_dlp.YoutubeDL')
+
+@patch('src.tiktok_api.yt_dlp.YoutubeDL')
 def test_fetch_posts_mixed_media_prioritization(mock_ytdl):
     # Mock mixed media (video metadata + playlist type)
     mock_instance = mock_ytdl.return_value.__enter__.return_value
@@ -75,16 +87,21 @@ def test_fetch_posts_mixed_media_prioritization(mock_ytdl):
         'entries': [
             {
                 'id': 'mixed1',
-                'webpage_url': 'url1',
-                '_type': 'video', 
-                'type': 'slideshow' # Contradictory, should favor video
+                'webpage_url': 'https://tiktok.com/@user/video/125',
+                '_type': 'video',
+                'type': 'slideshow'  # Contradictory, should favor video
             }
         ]
     }
     
-    posts = fetch_posts("creator1", depth=10)
-    assert len(posts) == 1
-    assert posts[0].kind == 'video'
+    # Mock _probe_kind to return video
+    with patch('src.tiktok_api._probe_kind') as mock_probe:
+        mock_probe.return_value = 'video'
+        
+        posts = fetch_posts("creator1", depth=10)
+        assert len(posts) == 1
+        assert posts[0].kind == 'video'
+
 
 def test_sort_posts_chronologically():
     p1 = Post("1", "c1", "v", "u1", "cap1", 1000)
@@ -93,6 +110,6 @@ def test_sort_posts_chronologically():
     
     sorted_posts = sort_posts_chronologically([p1, p2, p3])
     
-    assert sorted_posts[0].post_id == "2" # 500
-    assert sorted_posts[1].post_id == "1" # 1000
-    assert sorted_posts[2].post_id == "3" # None (last)
+    assert sorted_posts[0].post_id == "2"  # 500
+    assert sorted_posts[1].post_id == "1"  # 1000
+    assert sorted_posts[2].post_id == "3"  # None (last)

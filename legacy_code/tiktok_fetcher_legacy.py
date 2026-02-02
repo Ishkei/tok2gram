@@ -39,13 +39,13 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     if depth and depth > 0:
         ydl_opts['playlist_items'] = f"1:{depth}"
     
-    actual_cookie = cookie_content
-    if not actual_cookie and cookie_path and os.path.exists(cookie_path):
-        with open(cookie_path, 'r') as f:
-            actual_cookie = f.read().strip()
-
-    if actual_cookie:
-        ydl_opts['http_headers']['Cookie'] = actual_cookie
+    # Preferred: use cookiefile (Netscape format) when available
+    if cookie_path and os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    # Fallback when necessary
+    elif cookie_content:
+        ydl_opts.setdefault('http_headers', {})
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     posts = []
     

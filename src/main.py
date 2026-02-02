@@ -10,8 +10,8 @@ try:
 except ImportError:
     pass
 from core.config_loader import load_config, load_creators
-from tiktok.fetcher import fetch_posts, sort_posts_chronologically
-from tiktok.downloader import download_post
+from tiktok_api import fetch_posts, sort_posts_chronologically
+from downloader import download_post
 from core.state import StateStore
 from telegram_bot.uploader import TelegramUploader
 from core.cookie_manager import CookieManager
@@ -27,7 +27,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tok2gram")
 
-async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager):
+_shutdown_event: asyncio.Event | None = None
+
+
+def _signal_handler(signame: str):
+    logger.warning(f"Received {signame}; initiating graceful shutdown...")
+    if _shutdown_event is not None:
+        _shutdown_event.set()
+
+
+def _setup_signal_handlers(loop: asyncio.AbstractEventLoop):
+    import signal as _signal
+    for sig in (_signal.SIGINT, _signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _signal_handler, sig.name)
+        except NotImplementedError:
+            # On non-POSIX, signal handlers may not be available
+            pass
+
+async def process_creator(creator_config: dict, settings: dict, state: StateStore, uploader: TelegramUploader, cookie_manager: CookieManager, shutdown_event: asyncio.Event):
     username = creator_config['username']
     chat_id = creator_config.get('telegram_chat_id') or settings.get('telegram_chat_id')
     fetch_depth = settings.get('fetch_depth', 10)
@@ -51,6 +69,9 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
     
     new_posts_count = 0
     for post in sorted_posts:
+        if shutdown_event.is_set():
+            logger.info("Shutdown requested; stopping new work for creator loop")
+            break
         if state.is_processed(post.post_id):
             continue
         
@@ -81,7 +102,10 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
                 
                 # Randomized delay between uploads to avoid Telegram flood limits
                 delay = random.uniform(5, 10)
-                await asyncio.sleep(delay)
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
+                except asyncio.TimeoutError:
+                    pass
                 
         except Exception as e:
             logger.error(f"Failed to process upload for post {post.post_id}: {e}")
@@ -106,19 +130,34 @@ async def main():
         
         cookie_manager = CookieManager("../data/cookies")
         
+        global _shutdown_event
+        _shutdown_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        _setup_signal_handlers(loop)
+        
         for creator in creators:
-            await process_creator(creator, settings, state, uploader, cookie_manager)
+            if _shutdown_event.is_set():
+                logger.info("Shutdown requested; breaking before next creator")
+                break
+            await process_creator(creator, settings, state, uploader, cookie_manager, _shutdown_event)
             
-            # Delay between creators to avoid TikTok blocks
+            # Delay between creators to avoid TikTok blocks, but respond to shutdown
             min_delay = settings.get('delay_between_creators_seconds_min', 30)
             max_delay = settings.get('delay_between_creators_seconds_max', 60)
             delay = random.uniform(min_delay, max_delay)
             logger.info(f"Waiting {delay:.1f}s before next creator...")
-            await asyncio.sleep(delay)
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                pass
             
     except Exception as e:
         logger.error(f"Execution failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.warning("KeyboardInterrupt received; exiting gracefully.")
+        sys.exit(0)

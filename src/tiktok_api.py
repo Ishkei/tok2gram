@@ -108,6 +108,8 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
                  for fetching posts, which helps with accounts that have privacy settings
                  preventing username-based lookups.
     """
+    actual_cookie_path = cookie_path
+    
     # If user_id is provided, use tiktokuser: prefix format
     if user_id:
         url = f"tiktokuser:{user_id}"
@@ -126,13 +128,13 @@ def fetch_posts(username: str, depth: int = 10, cookie_path: Optional[str] = Non
     if depth and depth > 0:
         ydl_opts['playlist_items'] = f"1:{depth}"
     
-    # Use cookiefile option for Netscape format cookies instead of raw cookie header
-    actual_cookie_path = cookie_path
+    # Preferred: use cookiefile (Netscape format) when available
     if actual_cookie_path and os.path.exists(actual_cookie_path):
         ydl_opts['cookiefile'] = actual_cookie_path
+    # Fallback when necessary
     elif cookie_content:
-        # Fallback: if cookie content is provided directly, use it in headers
-        ydl_opts['http_headers'] = {'Cookie': cookie_content}
+        ydl_opts.setdefault('http_headers', {})
+        ydl_opts['http_headers']['Cookie'] = cookie_content
 
     posts = []
     

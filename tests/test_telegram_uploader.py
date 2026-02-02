@@ -9,7 +9,7 @@ src_dir = os.path.join(root_dir, 'src')
 sys.path.insert(0, src_dir)
 
 from telegram_bot.uploader import TelegramUploader  
-from tiktok.fetcher import Post
+from src.tiktok_api import Post
 
 @pytest.mark.asyncio
 @patch('telegram_bot.uploader.Bot')
