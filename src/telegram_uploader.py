@@ -168,22 +168,21 @@ class TelegramUploader:
         """
         Compress video to target size using single-pass CRF encoding with progress tracking.
         Uses CRF (Constant Rate Factor) for faster encoding compared to 2-pass.
-        Dynamically adjusts CRF based on input file size for better results.
-        Returns path to compressed video (or original if compression fails/unnecessary).
+        Dynamically adjusts CRF and resolution based on duration and target size.
         """
         attempt = 0
         last_compressed_size_mb = None
         
-        # Calculate initial CRF based on file size for better targeting
+        # Calculate initial CRF based on file size
         file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
         if file_size_mb > 150:
-            current_crf = 34  # Very aggressive for very large files
+            current_crf = 34
         elif file_size_mb > 100:
-            current_crf = 32  # Aggressive for large files
+            current_crf = 32
         elif file_size_mb > 70:
-            current_crf = 30  # Moderate for medium files
+            current_crf = 30
         else:
-            current_crf = 28  # Lighter compression for smaller files
+            current_crf = 28
         
         while attempt < max_attempts:
             attempt += 1
@@ -209,11 +208,28 @@ class TelegramUploader:
                         logger.info(f"Existing compressed file is {existing_size:.2f}MB (> 50MB), re-compressing")
                         os.remove(output_path)
 
-                logger.info(f"Compressing {os.path.basename(input_path)} with CRF {current_crf} (file: {file_size_mb:.1f}MB, duration: {duration:.1f}s, attempt {attempt}/{max_attempts})")
+                # Calculate target bitrate to estimate if we need more drastic measures
+                # Target total bitrate in kbps
+                target_total_bitrate = (target_size_mb * 1024 * 8) / duration
+                
+                # Adjust audio bitrate based on available budget
+                audio_bitrate = "128k"
+                if target_total_bitrate < 250:
+                    audio_bitrate = "64k"
+                if target_total_bitrate < 150:
+                    audio_bitrate = "32k"
+
+                # Adjust resolution if target bitrate is very low or we're on a late attempt
+                vf_filters = []
+                if target_total_bitrate < 400 or attempt >= 2:
+                    vf_filters.append("scale='min(720,iw)':-2")
+                if target_total_bitrate < 200 or attempt >= 4 or current_crf >= 45:
+                    vf_filters.append("scale='min(480,iw)':-2")
+                
+                logger.info(f"Compressing {os.path.basename(input_path)} with CRF {current_crf} (file: {file_size_mb:.1f}MB, dur: {duration:.1f}s, target: {target_total_bitrate:.0f}kbps, audio: {audio_bitrate}, attempt {attempt}/{max_attempts})")
 
                 # Start progress tracking
                 with progress_manager:
-                    # Single-pass CRF encoding - much faster than 2-pass
                     compress_task = progress_manager.add_task(
                         "compress",
                         total=duration,
@@ -221,18 +237,21 @@ class TelegramUploader:
                     )
                     
                     # Single-pass CRF encoding
-                    # CRF 28 provides good balance of quality and file size
-                    # Higher CRF = smaller file, faster encoding (23 is default, 28 is good for compression)
                     cmd = [
                         "ffmpeg", "-y", "-i", input_path,
                         "-c:v", "libx264",
                         "-crf", str(current_crf),
-                        "-preset", "ultrafast",
-                        "-c:a", "aac", "-b:a", "128k",
+                        "-preset", "veryfast",  # Better than ultrafast for small size
+                        "-c:a", "aac", "-b:a", audio_bitrate,
                         "-movflags", "+faststart",
-                        "-threads", "4",  # Optimize for your 4-thread CPU
-                        output_path
+                        "-threads", "4",
                     ]
+                    
+                    if vf_filters:
+                        # Use the last (most aggressive) filter
+                        cmd.extend(["-vf", vf_filters[-1]])
+                        
+                    cmd.append(output_path)
                     
                     process = subprocess.Popen(
                         cmd,
@@ -263,24 +282,21 @@ class TelegramUploader:
                     
                     # Verify the compressed file is actually under 50MB
                     if new_size_mb >= 50:
-                        # Check if compression has plateaued (same size as last attempt)
-                        if last_compressed_size_mb and abs(new_size_mb - last_compressed_size_mb) < 1.0:
-                            logger.warning(f"Compression plateaued at {new_size_mb:.2f}MB (no improvement from last attempt)")
+                        # Check if compression has plateaued and we're already at max CRF
+                        if last_compressed_size_mb and abs(new_size_mb - last_compressed_size_mb) < 0.5 and current_crf >= 50:
+                            logger.warning(f"Compression plateaued at {new_size_mb:.2f}MB")
                             logger.warning("Cannot compress below 50MB limit - returning original file")
                             return input_path
                         
                         last_compressed_size_mb = new_size_mb
-                        logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying with higher CRF...")
+                        logger.warning(f"Compressed file is {new_size_mb:.2f}MB, still > 50MB! Retrying...")
                         
-                        # Increase CRF more aggressively for large files
-                        if new_size_mb > 150:
-                            current_crf = min(51, current_crf + 4)  # Big jump for very large results
-                        elif new_size_mb > 100:
-                            current_crf = min(51, current_crf + 3)  # Moderate jump
-                        elif new_size_mb > 70:
-                            current_crf = min(51, current_crf + 3)  # Moderate jump
+                        # Increase CRF more aggressively
+                        if new_size_mb > 100:
+                            current_crf = min(51, current_crf + 5)
                         else:
-                            current_crf = min(51, current_crf + 2)  # Small jump
+                            current_crf = min(51, current_crf + 3)
+                        
                         os.remove(output_path)
                         continue
                     
@@ -292,7 +308,6 @@ class TelegramUploader:
                 logger.error(f"Compression failed (attempt {attempt}/{max_attempts}): {e}")
                 if attempt >= max_attempts:
                     return input_path
-                # Increase CRF and retry
                 current_crf = min(51, current_crf + 3)
 
         return input_path
