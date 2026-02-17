@@ -290,7 +290,7 @@ async def main():
             chat_id=settings.get('telegram_chat_id')
         )
         
-        cookie_manager = CookieManager("cookies")
+        cookie_manager = CookieManager("data/cookies")
         
         for creator in creators:
             # Check shutdown signal before processing each creator
