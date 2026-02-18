@@ -1,0 +1,9 @@
+yt-dlp
+python-telegram-bot==20.*
+PyYAML
+tenacity
+requests
+pytest-asyncio
+gallery-dl
+rich
+

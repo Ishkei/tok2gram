@@ -1,0 +1,47 @@
+# TikTok Creators Configuration
+# 
+# Each creator entry supports the following fields:
+# - username (required): The TikTok username
+# - chat_id (required): The Telegram chat ID to send posts to
+# - user_id (optional): The numeric TikTok user ID. Use this for accounts with privacy
+#   settings that prevent username-based API lookups. When provided, the user_id will be
+#   used instead of the username for fetching posts.
+#
+# Example with username only:
+#   - username: "exampleuser"
+#     chat_id: "-1001234567890"
+#
+# Example with user_id (for private/restricted accounts):
+#   - username: "privateuser"
+#     user_id: "1234567890123456789"
+#     chat_id: "-1001234567890"
+
+creators:
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
+  - username: ""
+    chat_id: "-"
