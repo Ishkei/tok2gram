@@ -223,7 +223,7 @@ async def process_creator(creator_config: dict, settings: dict, state: StateStor
                 current_cookie_path = cookie_manager.get_current_cookie_path()
                 
                 # Run download in executor
-                media = await loop.run_in_executor(None, lambda: download_post(post, "downloads", cookie_path=current_cookie_path, cookie_content=cookie_content))
+                media = await loop.run_in_executor(None, lambda: download_post(post, os.path.join(BASE_DIR, "data", "downloads"), cookie_path=current_cookie_path, cookie_content=cookie_content))
                 
                 if not media:
                     logger.error(f"Failed to download post {post.post_id}")
@@ -280,7 +280,7 @@ async def main():
     
     try:
         config = load_config(os.path.join(BASE_DIR, "config", "config.yaml"))
-        creators = load_creators(os.path.join(BASE_DIR, "config", "creators.yaml"))
+        creators = load_creators(os.path.join(BASE_DIR, "creators.yaml"))
         settings = config.get('settings', {})
         
         logger.info(f"Loaded config and {len(creators)} creators.")
