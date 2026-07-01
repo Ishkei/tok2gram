@@ -1,0 +1,41 @@
+# Sprint Status Template
+# Use this template as the basis for generating `sprint-status.yaml`.
+# Replace placeholders with generation-time values or have your automation fill them.
+
+generated: "{date}"
+project: "{project_name}"
+project_key: "{project_key}"
+tracking_system: "{tracking_system}" # e.g., file-system, jira
+story_location: "{story_location}"     # e.g., docs/stories/
+
+# STATUS DEFINITIONS:
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+development_status:
+  # Epics (example)
+  epic-1: backlog
+  epic-2: backlog
+
+  # Story keys (example format: {epic}-{storynum}-{short-title})
+  # Replace or programmatically populate this section with all story keys from epics.
+  # Example entries:
+  # 1-1-load-configuration-and-creators: backlog
+  # 1-2-fetch-latest-posts-from-tiktok: backlog
+
+  # Retrospectives (optional)
+  # epic-1-retrospective: optional
+
+# Notes:
+# - Automation should produce a concrete list of epics and story keys under `development_status`.
+# - When the first story of an epic moves to `ready-for-dev` or `in-progress`, consider updating the epic status to `in-progress`.
+# - Keep this template under version control and use it as the canonical output format for sprint-planning.

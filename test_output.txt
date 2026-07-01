@@ -1,0 +1,45 @@
+Starting pipeline test...
+2026-01-31 18:58:04,669 - tok2gram - INFO - Processing creator: test_user
+2026-01-31 18:58:04,720 - tok2gram - INFO - New post found: 1 (video)
+DEBUG: Starting download for 1
+DEBUG: Finished download for 1
+2026-01-31 18:58:05,233 - tok2gram - INFO - New post found: 2 (video)
+DEBUG: Starting upload for video
+DEBUG: Starting download for 2
+DEBUG: Finished download for 2
+2026-01-31 18:58:05,740 - tok2gram - INFO - New post found: 3 (video)
+DEBUG: Starting download for 3
+DEBUG: Finished upload for video
+DEBUG: Finished download for 3
+DEBUG: Starting upload for video
+DEBUG: Finished upload for video
+DEBUG: Starting upload for video
+DEBUG: Finished upload for video
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/base_events.py", line 653, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/soto/tok2gram/tests/test_pipeline_logic_v2.py", line 60, in test_pipeline
+    await process_creator(creator_config, settings, state, uploader, cookie_manager)
+  File "/home/soto/tok2gram/main.py", line 160, in process_creator
+    await queue.join()
+  File "/usr/lib/python3.11/asyncio/queues.py", line 215, in join
+    await self._finished.wait()
+  File "/usr/lib/python3.11/asyncio/locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/soto/tok2gram/tests/test_pipeline_logic_v2.py", line 73, in <module>
+    asyncio.run(test_pipeline())
+  File "/usr/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
