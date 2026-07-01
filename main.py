@@ -53,6 +53,8 @@ def get_retry_delay(attempt: int, is_ip_blocked: bool = False) -> float:
 BOT_NAME = "Tok2Gram"
 BOT_VERSION = "1.0.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, "data", "downloads"), exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
